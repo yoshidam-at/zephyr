@@ -402,7 +402,7 @@ static int boot_read_swap_state(u32_t bank_offs, struct boot_swap_state *state)
 	return 0;
 }
 
-int boot_swap_type(void)
+int mcuboot_swap_type(void)
 {
 	const struct boot_swap_table *table;
 	struct boot_swap_state state_slot0;
