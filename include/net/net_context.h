@@ -363,7 +363,7 @@ static inline sa_family_t net_context_get_family(struct net_context *context)
 		return AF_INET6;
 	}
 
-	return AF_INET;
+	return AF_INET6;
 }
 
 /**
