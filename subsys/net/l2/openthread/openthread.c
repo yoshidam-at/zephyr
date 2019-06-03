@@ -190,6 +190,7 @@ out:
 	otMessageFree(aMessage);
 }
 
+static void openthread_start(struct openthread_context *ot_context);
 void ot_joiner_start_handler(otError error, void *context)
 {
 	struct openthread_context *ot_context = context;
@@ -201,6 +202,10 @@ void ot_joiner_start_handler(otError error, void *context)
 		break;
 	default:
 		NET_ERR("Join failed [%d]", error);
+#if defined(CONFIG_OPENTHREAD_JOINER_AUTOSTART_RETRY)
+		openthread_start(ot_context);
+		NET_ERR("Retrying to join...");
+#endif
 		break;
 	}
 }

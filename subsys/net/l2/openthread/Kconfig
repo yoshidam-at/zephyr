@@ -155,6 +155,12 @@ config OPENTHREAD_JOINER_AUTOSTART
 	help
 	  Enable automatic joiner start
 
+config OPENTHREAD_JOINER_AUTOSTART_RETRY
+	bool "Retry automatic joiner start"
+	depends on OPENTHREAD_JOINER_AUTOSTART
+	help
+	  Enable retrying automatic joiner start
+
 config OPENTHREAD_JOINER_PSKD
 	string "Default Pre Shared key for the Device to start joiner"
 	depends on OPENTHREAD_JOINER_AUTOSTART
