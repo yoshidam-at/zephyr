@@ -188,6 +188,10 @@ void ot_joiner_start_handler(otError error, void *context)
 		break;
 	default:
 		NET_ERR("Join failed [%d]", error);
+#if defined(CONFIG_OPENTHREAD_JOINER_AUTOSTART_RETRY)
+		openthread_joiner_autostart(ot_context->iface);
+		NET_ERR("Retrying to join...");
+#endif
 		break;
 	}
 }
