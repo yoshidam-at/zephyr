@@ -68,7 +68,7 @@ int sys_pm_policy_next_state(s32_t ticks, enum power_states *pm_state)
 	int i;
 
 	if ((ticks != K_FOREVER) && (ticks < pm_policy[0].min_residency)) {
-		LOG_ERR("Not enough time for PM operations: %d\n", ticks);
+		//LOG_ERR("Not enough time for PM operations: %d\n", ticks);
 		return SYS_PM_NOT_HANDLED;
 	}
 
