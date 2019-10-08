@@ -94,6 +94,12 @@ if MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED || \
 	MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED || \
 	MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED
 
+comment "key exchange options"
+
+config MBEDTLS_SSL_VERIFY_OPTIONAL_ENABLED
+	bool "Enable the SSL_VERIFY_OPTIONAL"
+	default n
+
 comment "Supported elliptic curves"
 
 config MBEDTLS_ECP_ALL_ENABLED

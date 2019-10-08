@@ -884,10 +884,14 @@ static int tls_mbedtls_init(struct net_context *context, bool is_server)
 	/* If verification level was specified explicitly, set it. Otherwise,
 	 * use mbedTLS default values (required for client, none for server)
 	 */
+#if defined(MBEDTLS_SSL_VERIFY_OPTIONAL_ENABLED)
+	mbedtls_ssl_conf_authmode(&context->tls->config,MBEDTLS_SSL_VERIFY_OPTIONAL);
+#else
 	if (context->tls->options.verify_level != -1) {
 		mbedtls_ssl_conf_authmode(&context->tls->config,
 					  context->tls->options.verify_level);
 	}
+#endif
 
 	mbedtls_ssl_conf_rng(&context->tls->config,
 			     mbedtls_ctr_drbg_random,
