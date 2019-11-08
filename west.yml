@@ -23,6 +23,8 @@ manifest:
       url-base: https://github.com/zephyrproject-rtos
     - name: civetweb
       url-base: https://github.com/civetweb
+    - name: open-degu
+      url-base: https://github.com/open-degu
 
   #
   # Please add items below based on alphabetical order
