@@ -1,0 +1,8 @@
+# Copyright (c) 2019 Atamrk Techno, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+config SE_HOSTLIB
+	bool "Secure Element hostlib Support"
+	help
+	  This option enables the Secure Element hostlib.

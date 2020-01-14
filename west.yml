@@ -101,6 +101,10 @@ manifest:
       remote: open-degu
       revision: c4c767ae521c214a3279fb10b01d733abc85b7f0
       path: modules/lib/openthread
+    - name: se_hostlib
+      remote: open-degu
+      revision: 8ad8f0514ec2c7901be7a054acf045e6f1e76e62
+      path: modules/lib/se_hostlib
     - name: segger
       revision: 6fcf61606d6012d2c44129edc033f59331e268bc
       path: modules/debug/segger
