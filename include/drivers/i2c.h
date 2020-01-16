@@ -96,6 +96,11 @@ extern "C" {
  * @note Not all SoC I2C implementations support this feature. */
 #define I2C_MSG_ADDR_10_BITS		BIT(3)
 
+/** Length will be first received byte.
+ *
+ * @note Not all SoC I2C implementations support this feature. */
+#define I2C_MSG_RECV_LEN		BIT(4)
+
 /**
  * @brief One I2C Message.
  *
@@ -120,6 +125,9 @@ struct i2c_msg {
 	/** Flags for this message */
 	u8_t		flags;
 };
+
+/** As specified in SMBus standard */
+#define I2C_SMBUS_BLOCK_MAX		32
 
 /**
  * @cond INTERNAL_HIDDEN
