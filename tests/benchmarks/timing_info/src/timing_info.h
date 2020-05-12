@@ -46,7 +46,7 @@
 
 #elif CONFIG_X86
 #define TIMING_INFO_PRE_READ()
-#define TIMING_INFO_OS_GET_TIME()      (_tsc_read())
+#define TIMING_INFO_OS_GET_TIME()      (z_tsc_read())
 #define TIMING_INFO_GET_TIMER_VALUE()  (TIMING_INFO_OS_GET_TIME())
 #define SUBTRACT_CLOCK_CYCLES(val)     (val)
 
@@ -59,7 +59,7 @@
 #elif CONFIG_ARC
 #define TIMING_INFO_PRE_READ()
 #define TIMING_INFO_OS_GET_TIME()     (k_cycle_get_32())
-#define TIMING_INFO_GET_TIMER_VALUE() (_arc_v2_aux_reg_read(_ARC_V2_TMR0_COUNT))
+#define TIMING_INFO_GET_TIMER_VALUE() (z_arc_v2_aux_reg_read(_ARC_V2_TMR0_COUNT))
 #define SUBTRACT_CLOCK_CYCLES(val)    ((u32_t)val)
 
 #elif CONFIG_NIOS2
@@ -138,7 +138,7 @@ static inline void benchmark_timer_start(void) {       }
 /* Get Core Frequency in MHz */
 static inline u32_t get_core_freq_MHz(void)
 {
-	return  (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC/1000000);
+	return  (sys_clock_hw_cycles_per_sec() / 1000000);
 }
 
 #define PRINT_STATS(x, y, z)   PRINT_F(x, y, z)
@@ -166,7 +166,7 @@ static inline u32_t get_core_freq_MHz(void)
 /* Enable this macro to print all the measurements.
  * Note: Some measurements in few architectures are not valid
  */
-/* #define PRINT_ALL_MEASUREMENTS */
+#define PRINT_ALL_MEASUREMENTS
 #ifndef PRINT_ALL_MEASUREMENTS
 /*If the measured cycles is greater than 10000 then one of the following is
  * possible.

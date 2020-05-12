@@ -17,7 +17,7 @@
 #include <device.h>
 #include <init.h>
 #include <soc.h>
-#include <uart.h>
+#include <drivers/uart.h>
 #include <linker/sections.h>
 #include <fsl_common.h>
 #include <fsl_clock.h>
@@ -138,7 +138,7 @@ static ALWAYS_INLINE void clkInit(void)
 #endif
 #if CONFIG_USB_KINETIS
 	CLOCK_EnableUsbfs0Clock(kCLOCK_UsbSrcPll0,
-				CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC);
+				DT_ARM_CORTEX_M4F_0_CLOCK_FREQUENCY);
 #endif
 }
 
@@ -179,8 +179,6 @@ static int fsl_frdm_k64f_init(struct device *arg)
 	temp_reg |= SYSMPU_CESR_SPERR_MASK;
 	SYSMPU->CESR = temp_reg;
 #endif /* !CONFIG_ARM_MPU */
-
-	_ClearFaults();
 
 	/* Initialize PLL/system clock to 120 MHz */
 	clkInit();

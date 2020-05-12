@@ -3,6 +3,10 @@
 BSD Sockets
 ###########
 
+.. contents::
+    :local:
+    :depth: 2
+
 Overview
 ********
 
@@ -13,20 +17,20 @@ and port existing simple networking applications to Zephyr.
 Here are the key requirements and concepts which governed BSD Sockets
 compatible API implementation for Zephyr:
 
-* Should have minimal overhead, similar to the requirement for other
+* Has minimal overhead, similar to the requirement for other
   Zephyr subsystems.
-* Should be implemented on top of
-  :ref:`native networking API <networking_api_usage>` to keep modular
-  design.
-* Should be namespaced by default, to avoid name conflicts with well-known
+* Is namespaced by default, to avoid name conflicts with well-known
   names like ``close()``, which may be part of libc or other POSIX
-  compatibility libraries. If enabled, should also expose native POSIX
-  names.
+  compatibility libraries.
+  If enabled by :option:`CONFIG_NET_SOCKETS_POSIX_NAMES`, it will also
+  expose native POSIX names.
 
 BSD Sockets compatible API is enabled using :option:`CONFIG_NET_SOCKETS`
 config option and implements the following operations: ``socket()``, ``close()``,
 ``recv()``, ``recvfrom()``, ``send()``, ``sendto()``, ``connect()``, ``bind()``,
-``listen()``, ``fcntl()`` (to set non-blocking mode), ``poll()``.
+``listen()``, ``accept()``, ``fcntl()`` (to set non-blocking mode),
+``getsockopt()``, ``setsockopt()``, ``poll()``, ``select()``,
+``getaddrinfo()``, ``getnameinfo()``.
 
 Based on the namespacing requirements above, these operations are by
 default exposed as functions with ``zsock_`` prefix, e.g.
@@ -37,34 +41,23 @@ functions like ``close()`` and ``fcntl()`` (which may conflict with
 functions in libc or other libraries, for example, with the filesystem
 libraries).
 
-The native BSD Sockets API uses file descriptors to represent sockets. File descriptors
-are small integers, consecutively assigned from zero. Internally, there is usually a table
-mapping file descriptors to internal object pointers. For memory efficiency reasons, the
-Zephyr BSD Sockets compatible API is devoid of such a table. Instead, ``net_context``
-pointers, cast to an int, are used to represent sockets. Thus, socket identifiers aren't
-really small integers, so the ``select()`` operation is not available, as it depends on the
-"small int" property of file descriptors. Instead of using ``select()`` then, use the ``poll()``
-operation, which is generally more efficient.
-
-The BSD Sockets API (and the POSIX API in general) also treat negative file
-descriptors values in a special way (such values usually mean an
-error). As the Zephyr API uses a pointer value cast to an int for file descriptors, it means
-that the pointer should not have the highest bit set, in other words,
-pointers should not refer to the second (highest) part of the address space.
-For many CPU architectures and SoCs Zephyr supports, user RAM is
-located in the lower half, so the above condition is satisfied. If
-you face an issue with some SoC because of this, please report it to the Zephyr bug
-tracker or mailing list. The decision to use pointers to represent
-sockets might be reworked in the future.
-
-The final entailment of the design requirements above is that the Zephyr
+Another entailment of the design requirements above is that the Zephyr
 API aggressively employs the short-read/short-write property of the POSIX API
 whenever possible (to minimize complexity and overheads). POSIX allows
 for calls like ``recv()`` and ``send()`` to actually process (receive
-or send) less data than requested by the user (on STREAM type sockets).
-For example, a call ``recv(sock, 1000, 0)`` may return 100,
+or send) less data than requested by the user (on ``SOCK_STREAM`` type
+sockets). For example, a call ``recv(sock, 1000, 0)`` may return 100,
 meaning that only 100 bytes were read (short read), and the application
-needs to retry call(s) to read the remaining 900 bytes.
+needs to retry call(s) to receive the remaining 900 bytes.
+
+The BSD Sockets API uses file descriptors to represent sockets. File
+descriptors are small integers, consecutively assigned from zero, shared
+among sockets, files, special devices (like stdin/stdout), etc. Internally,
+there is a table mapping file descriptors to internal object pointers.
+The file descriptor table is used by the BSD Sockets API even if the rest
+of the POSIX subsystem (filesystem, stdin/stdout) is not enabled.
+
+.. _secure_sockets_interface:
 
 Secure Sockets
 **************
@@ -73,12 +66,12 @@ Zephyr provides an extension of standard POSIX socket API, allowing to create
 and configure sockets with TLS protocol types, facilitating secure
 communication. Secure functions for the implementation are provided by
 mbedTLS library. Secure sockets implementation allows use of both TLS and DTLS
-protocols with standard socket calls. See :c:type:`net_ip_protocol_secure` for
-supported secure protocol versions.
+protocols with standard socket calls. See :c:type:`net_ip_protocol_secure` type
+for supported secure protocol versions.
 
-To enable secure sockets, set the
-:option:`CONFIG_NET_SOCKETS_SOCKOPT_TLS`
-option. To enable DTLS support, use :option:`CONFIG_NET_SOCKETS_ENABLE_DTLS`.
+To enable secure sockets, set the :option:`CONFIG_NET_SOCKETS_SOCKOPT_TLS`
+option. To enable DTLS support, use :option:`CONFIG_NET_SOCKETS_ENABLE_DTLS`
+option.
 
 TLS credentials subsystem
 =========================
@@ -125,7 +118,7 @@ CA certificate and hostname can be set:
 .. code-block:: c
 
    sec_tag_t sec_tag_opt[] = {
-      CA_CERTIFICATE_TAG,
+           CA_CERTIFICATE_TAG,
    };
 
    ret = setsockopt(sock, SOL_TLS, TLS_SEC_TAG_LIST,
@@ -135,12 +128,13 @@ CA certificate and hostname can be set:
 
    char host[] = "google.com";
 
-   ret = setsockopt(sock, SOL_TLS, TLS_HOSTNAME, host, sizeof(host));
+   ret = setsockopt(sock, SOL_TLS, TLS_HOSTNAME, host, sizeof(host) - 1);
 
 Once configured, socket can be used just like a regular TCP socket.
 
 Several samples in Zephyr use secure sockets for communication. For a sample use
-see e.g. :ref:`sockets-echo-server-sample` or :ref:`sockets-http-get`.
+see e.g. :ref:`echo-server sample application <sockets-echo-server-sample>` or
+:ref:`HTTP GET sample application <sockets-http-get>`.
 
 Secure Sockets options
 ======================

@@ -8,7 +8,7 @@ Overview
 
 This sample app demonstrates use of a USB Human Interface Device (HID) driver
 by the Zephyr project.  This very simple driver is enumerated as a raw HID
-device. This sample can be found under :file:`samples/subsys/usb/hid` in the
+device. This sample can be found under :zephyr_file:`samples/subsys/usb/hid` in the
 Zephyr project tree.
 
 Requirements
@@ -20,11 +20,11 @@ Building and Running
 ********************
 
 This sample can be built for multiple boards, in this example we will build it
-for the quark_se_c1000_devboard board:
+for the reel_board board:
 
 .. zephyr-app-commands::
    :zephyr-app: samples/subsys/usb/hid
-   :board: quark_se_c1000_devboard
+   :board: reel_board
    :goals: build
    :compact:
 

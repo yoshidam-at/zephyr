@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 # This file must be included into the toplevel CMakeLists.txt file of
 # Zephyr applications, e.g. zephyr/samples/hello_world/CMakeLists.txt
 # must start with the line:
@@ -6,13 +8,6 @@
 #
 # It exists to reduce boilerplate code that Zephyr expects to be in
 # application CMakeLists.txt code.
-#
-# Omitting it is permitted, but doing so incurs a maintenance cost as
-# the application must manage upstream changes to this file.
-
-# app is a CMake library containing all the application code and is
-# modified by the entry point ${APPLICATION_SOURCE_DIR}/CMakeLists.txt
-# that was specified when cmake was called.
 
 # CMake version 3.13.1 is the real minimum supported version.
 #
@@ -28,12 +23,10 @@ cmake_minimum_required(VERSION 3.13.1)
 # CMP0002: "Logical target names must be globally unique"
 cmake_policy(SET CMP0002 NEW)
 
-if(NOT (${CMAKE_VERSION} VERSION_LESS "3.13.0"))
-  # Use the old CMake behaviour until 3.13.x is required and the build
-  # scripts have been ported to the new behaviour.
-  # CMP0079: "target_link_libraries() allows use with targets in other directories"
-  cmake_policy(SET CMP0079 OLD)
-endif()
+# Use the old CMake behaviour until the build scripts have been ported
+# to the new behaviour.
+# CMP0079: "target_link_libraries() allows use with targets in other directories"
+cmake_policy(SET CMP0079 OLD)
 
 define_property(GLOBAL PROPERTY ZEPHYR_LIBS
     BRIEF_DOCS "Global list of all Zephyr CMake libs that should be linked in"
@@ -79,13 +72,13 @@ add_custom_target(code_data_relocation_target)
 # and its associated variables, e.g. PROJECT_SOURCE_DIR.
 # It is recommended to always use ZEPHYR_BASE instead of PROJECT_SOURCE_DIR
 # when trying to reference ENV${ZEPHYR_BASE}.
-set(PROJECT_SOURCE_DIR $ENV{ZEPHYR_BASE})
 
-# Convert path to use the '/' separator
-string(REPLACE "\\" "/" PROJECT_SOURCE_DIR ${PROJECT_SOURCE_DIR})
+# Note any later project() resets PROJECT_SOURCE_DIR
+file(TO_CMAKE_PATH "$ENV{ZEPHYR_BASE}" PROJECT_SOURCE_DIR)
 
 set(ZEPHYR_BINARY_DIR ${PROJECT_BINARY_DIR})
 set(ZEPHYR_BASE ${PROJECT_SOURCE_DIR})
+set(ENV{ZEPHYR_BASE}   ${ZEPHYR_BASE})
 
 set(AUTOCONF_H ${__build_dir}/include/generated/autoconf.h)
 # Re-configure (Re-execute all CMakeLists.txt code) when autoconf.h changes
@@ -120,6 +113,9 @@ add_custom_target(
   COMMAND ${CMAKE_COMMAND} -P ${ZEPHYR_BASE}/cmake/pristine.cmake
   # Equivalent to rm -rf build/*
   )
+
+# Dummy add to generate files.
+zephyr_linker_sources(SECTIONS)
 
 # The BOARD can be set by 3 sources. Through environment variables,
 # through the cmake CLI, and through CMakeLists.txt.
@@ -255,6 +251,12 @@ else()
   set(SOC_DIR ${SOC_ROOT}/soc)
 endif()
 
+if(NOT ARCH_ROOT)
+  set(ARCH_DIR ${ZEPHYR_BASE}/arch)
+else()
+  set(ARCH_DIR ${ARCH_ROOT}/arch)
+endif()
+
 # Use BOARD to search for a '_defconfig' file.
 # e.g. zephyr/boards/arm/96b_carbon_nrf51/96b_carbon_nrf51_defconfig.
 # When found, use that path to infer the ARCH we are building for.
@@ -292,6 +294,7 @@ foreach(root ${BOARD_ROOT})
 
   if(DEFINED SHIELD)
     foreach(s ${SHIELD_AS_LIST})
+      list(REMOVE_ITEM SHIELD ${s})
       list(FIND SHIELD_LIST ${s} _idx)
       if (NOT _idx EQUAL -1)
         list(GET shields_refs_list ${_idx} s_path)
@@ -308,6 +311,33 @@ foreach(root ${BOARD_ROOT})
         )
       else()
         list(APPEND NOT_FOUND_SHIELD_LIST ${s})
+      endif()
+
+      # search for shield/boards/board.overlay file
+      if(EXISTS ${shield_dir}/${s}/boards/${BOARD}.overlay)
+        # add shield/board overlay to the shield overlays list
+        list(APPEND
+          shield_dts_files
+          ${shield_dir}/${s}/boards/${BOARD}.overlay
+        )
+      endif()
+
+      # search for shield/shield.conf file
+      if(EXISTS ${shield_dir}/${s}/${s}.conf)
+        # add shield.conf to the shield config list
+        list(APPEND
+          shield_conf_files
+          ${shield_dir}/${s}/${s}.conf
+        )
+      endif()
+
+      # search for shield/boards/board.conf file
+      if(EXISTS ${shield_dir}/${s}/boards/${BOARD}.conf)
+        # add HW specific board.conf to the shield config list
+        list(APPEND
+          shield_conf_files
+          ${shield_dir}/${s}/boards/${BOARD}.conf
+        )
       endif()
     endforeach()
   endif()
@@ -341,10 +371,14 @@ elseif(DEFINED ENV{CONF_FILE})
   set(CONF_FILE $ENV{CONF_FILE})
 
 elseif(COMMAND set_conf_file)
+  message(WARNING "'set_conf_file' is deprecated, it will be removed in a future release.")
   set_conf_file()
 
 elseif(EXISTS   ${APPLICATION_SOURCE_DIR}/prj_${BOARD}.conf)
   set(CONF_FILE ${APPLICATION_SOURCE_DIR}/prj_${BOARD}.conf)
+
+elseif(EXISTS   ${APPLICATION_SOURCE_DIR}/boards/${BOARD}.conf)
+  set(CONF_FILE ${APPLICATION_SOURCE_DIR}/prj.conf ${APPLICATION_SOURCE_DIR}/boards/${BOARD}.conf)
 
 elseif(EXISTS   ${APPLICATION_SOURCE_DIR}/prj.conf)
   set(CONF_FILE ${APPLICATION_SOURCE_DIR}/prj.conf)
@@ -363,6 +397,8 @@ elseif(DEFINED ENV{DTC_OVERLAY_FILE})
   set(DTC_OVERLAY_FILE $ENV{DTC_OVERLAY_FILE})
 elseif(EXISTS          ${APPLICATION_SOURCE_DIR}/${BOARD}.overlay)
   set(DTC_OVERLAY_FILE ${APPLICATION_SOURCE_DIR}/${BOARD}.overlay)
+elseif(EXISTS          ${APPLICATION_SOURCE_DIR}/app.overlay)
+  set(DTC_OVERLAY_FILE ${APPLICATION_SOURCE_DIR}/app.overlay)
 endif()
 
 set(DTC_OVERLAY_FILE ${DTC_OVERLAY_FILE} CACHE STRING "If desired, you can \
@@ -390,6 +426,7 @@ include(${ZEPHYR_BASE}/cmake/host-tools.cmake)
 # preprocess DT sources, and then, after we have finished processing
 # both DT and Kconfig we complete the target-specific configuration,
 # and possibly change the toolchain.
+include(${ZEPHYR_BASE}/cmake/zephyr_module.cmake)
 include(${ZEPHYR_BASE}/cmake/generic_toolchain.cmake)
 include(${ZEPHYR_BASE}/cmake/dts.cmake)
 include(${ZEPHYR_BASE}/cmake/kconfig.cmake)

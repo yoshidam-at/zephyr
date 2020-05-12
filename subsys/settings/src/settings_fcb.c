@@ -6,26 +6,28 @@
  */
 
 #include <errno.h>
-#include <fcb.h>
+#include <fs/fcb.h>
 #include <string.h>
 
 #include "settings/settings.h"
 #include "settings/settings_fcb.h"
 #include "settings_priv.h"
 
+#include <logging/log.h>
+LOG_MODULE_DECLARE(settings, CONFIG_SETTINGS_LOG_LEVEL);
+
 #define SETTINGS_FCB_VERS		1
 
 struct settings_fcb_load_cb_arg {
-	load_cb cb;
+	line_load_cb cb;
 	void *cb_arg;
 };
 
-static int settings_fcb_load(struct settings_store *cs, load_cb cb,
-			     void *cb_arg);
+static int settings_fcb_load(struct settings_store *cs, const char *subtree);
 static int settings_fcb_save(struct settings_store *cs, const char *name,
 			     const char *value, size_t val_len);
 
-static struct settings_store_itf settings_fcb_itf = {
+static const struct settings_store_itf settings_fcb_itf = {
 	.csi_load = settings_fcb_load,
 	.csi_save = settings_fcb_save,
 };
@@ -38,7 +40,7 @@ int settings_fcb_src(struct settings_fcb *cf)
 	cf->cf_fcb.f_scratch_cnt = 1;
 
 	while (1) {
-		rc = fcb_init(CONFIG_SETTINGS_FCB_FLASH_AREA, &cf->cf_fcb);
+		rc = fcb_init(DT_FLASH_AREA_STORAGE_ID, &cf->cf_fcb);
 		if (rc) {
 			return -EINVAL;
 		}
@@ -99,8 +101,8 @@ static int settings_fcb_load_cb(struct fcb_entry_ctx *entry_ctx, void *arg)
 	return 0;
 }
 
-static int settings_fcb_load(struct settings_store *cs, load_cb cb,
-			     void *cb_arg)
+static int settings_fcb_load_priv(struct settings_store *cs, line_load_cb cb,
+				  void *cb_arg)
 {
 	struct settings_fcb *cf = (struct settings_fcb *)cs;
 	struct settings_fcb_load_cb_arg arg;
@@ -115,12 +117,20 @@ static int settings_fcb_load(struct settings_store *cs, load_cb cb,
 	return 0;
 }
 
+static int settings_fcb_load(struct settings_store *cs, const char *subtree)
+{
+	return settings_fcb_load_priv(cs, settings_line_load_cb,
+				      (void *)subtree);
+}
+
+
 static int read_handler(void *ctx, off_t off, char *buf, size_t *len)
 {
 	struct fcb_entry_ctx *entry_ctx = ctx;
 
 	if (off >= entry_ctx->loc.fe_data_len) {
-		return -EINVAL;
+		*len = 0;
+		return 0;
 	}
 
 	if ((off + *len) > entry_ctx->loc.fe_data_len) {
@@ -152,7 +162,7 @@ static void settings_fcb_compress(struct settings_fcb *cf)
 	loc1.fap = cf->cf_fcb.fap;
 
 	loc1.loc.fe_sector = NULL;
-	loc1.loc.fe_elem_off = 0;
+	loc1.loc.fe_elem_off = 0U;
 
 	while (fcb_getnext(&cf->cf_fcb, &loc1.loc) == 0) {
 		if (loc1.loc.fe_sector != cf->cf_fcb.f_oldest) {
@@ -204,17 +214,22 @@ static void settings_fcb_compress(struct settings_fcb *cf)
 			continue;
 		}
 
-		rc = settings_entry_copy(&loc2, 0, &loc1, 0,
-					 loc1.loc.fe_data_len);
+		rc = settings_line_entry_copy(&loc2, 0, &loc1, 0,
+					      loc1.loc.fe_data_len);
 		if (rc) {
 			continue;
 		}
 		rc = fcb_append_finish(&cf->cf_fcb, &loc2.loc);
-		__ASSERT(rc == 0, "Failed to finish fcb_append.\n");
+
+		if (rc != 0) {
+			LOG_ERR("Failed to finish fcb_append (%d)", rc);
+		}
 	}
 	rc = fcb_rotate(&cf->cf_fcb);
 
-	__ASSERT(rc == 0, "Failed to fcb rotate.\n");
+	if (rc != 0) {
+		LOG_ERR("Failed to fcb rotate (%d)", rc);
+	}
 }
 
 static size_t get_len_cb(void *ctx)
@@ -234,8 +249,8 @@ static int write_handler(void *ctx, off_t off, char const *buf, size_t len)
 }
 
 /* ::csi_save implementation */
-static int settings_fcb_save(struct settings_store *cs, const char *name,
-			     const char *value, size_t val_len)
+static int settings_fcb_save_priv(struct settings_store *cs, const char *name,
+				  const char *value, size_t val_len)
 {
 	struct settings_fcb *cf = (struct settings_fcb *)cs;
 	struct fcb_entry_ctx loc;
@@ -248,7 +263,7 @@ static int settings_fcb_save(struct settings_store *cs, const char *name,
 		return -EINVAL;
 	}
 
-	wbs = flash_area_align(cf->cf_fcb.fap);
+	wbs = cf->cf_fcb.f_align;
 	len = settings_line_len_calc(name, val_len);
 
 	for (i = 0; i < cf->cf_fcb.f_sector_cnt - 1; i++) {
@@ -273,6 +288,29 @@ static int settings_fcb_save(struct settings_store *cs, const char *name,
 		}
 	}
 	return rc;
+}
+
+static int settings_fcb_save(struct settings_store *cs, const char *name,
+			     const char *value, size_t val_len)
+{
+	struct settings_line_dup_check_arg cdca;
+
+	if (val_len > 0 && value == NULL) {
+		return -EINVAL;
+	}
+
+	/*
+	 * Check if we're writing the same value again.
+	 */
+	cdca.name = name;
+	cdca.val = (char *)value;
+	cdca.is_dup = 0;
+	cdca.val_len = val_len;
+	settings_fcb_load_priv(cs, settings_line_dup_check_cb, &cdca);
+	if (cdca.is_dup == 1) {
+		return 0;
+	}
+	return settings_fcb_save_priv(cs, name, (char *)value, val_len);
 }
 
 void settings_mount_fcb_backend(struct settings_fcb *cf)

@@ -74,7 +74,7 @@ void test_config_compress_file(void)
 	rc = file_str_cmp(cf.cf_name, exp_content_1, sizeof(exp_content_1)-1);
 	zassert_true(rc == 0, "bad value read");
 
-	val16 = 257;
+	val16 = 257U;
 	for (int i = 0; i < 20; i++) {
 		val64 = i;
 		rc = settings_save();
@@ -96,7 +96,7 @@ int file_str_cmp(const char *fname, char const *string, size_t pattern_len)
 {
 	int rc;
 	u32_t len;
-	u32_t rlen;
+	size_t rlen;
 	char *buf;
 	struct fs_dirent entry;
 

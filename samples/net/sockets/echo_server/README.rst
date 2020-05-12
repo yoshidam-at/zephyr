@@ -12,12 +12,12 @@ for incoming IPv4 or IPv6 packets (sent by the echo client) and simply sends
 them back.
 
 The source code for this sample application can be found at:
-:file:`samples/net/sockets/echo_server`.
+:zephyr_file:`samples/net/sockets/echo_server`.
 
 Requirements
 ************
 
-- :ref:`networking_with_qemu`
+- :ref:`networking_with_host`
 
 Building and Running
 ********************
@@ -47,6 +47,9 @@ echo-server directory:
 - :file:`overlay-qemu_802154.conf`
   This overlay config enables support for two QEMU's when simulating
   IEEE 802.15.4 network that are connected together.
+
+- :file:`overlay-ppp.conf`
+  This overlay config enables support for PPP (Point-to-Point Protocol).
 
 - :file:`overlay-tls.conf`
   This overlay config enables support for TLS.
@@ -84,7 +87,7 @@ Enable TLS support in the sample by building the project with the
    :compact:
 
 An alternative way is to specify ``-DOVERLAY_CONFIG=overlay-tls.conf`` when
-running cmake.
+running ``west build`` or ``cmake``.
 
 The certificate used by the sample can be found in the sample's ``src``
 directory. The default certificates used by Socket Echo Server and

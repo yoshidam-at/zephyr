@@ -10,7 +10,7 @@ LOG_MODULE_REGISTER(net_ieee802154_csma, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 #include <net/net_core.h>
 #include <net/net_if.h>
 
-#include <misc/util.h>
+#include <sys/util.h>
 
 #include <stdlib.h>
 #include <errno.h>
@@ -41,7 +41,7 @@ loop:
 		if (be) {
 			u8_t bo_n = sys_rand32_get() & ((1 << be) - 1);
 
-			k_busy_wait(bo_n * 20);
+			k_busy_wait(bo_n * 20U);
 		}
 
 		while (1) {
@@ -49,7 +49,7 @@ loop:
 				break;
 			}
 
-			be = min(be + 1, max_be);
+			be = MIN(be + 1, max_be);
 			nb++;
 
 			if (nb > max_bo) {

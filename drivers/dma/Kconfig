@@ -53,11 +53,6 @@ module = DMA
 module-str = dma
 source "subsys/logging/Kconfig.template.log_config"
 
-config DCACHE_WRITEBACK
-	bool "Data Cache Writeback"
-	help
-	  Cache configuration for "Writeback".
-
 source "drivers/dma/Kconfig.qmsi"
 
 source "drivers/dma/Kconfig.stm32f4x"
@@ -67,5 +62,7 @@ source "drivers/dma/Kconfig.sam_xdmac"
 source "drivers/dma/Kconfig.cavs"
 
 source "drivers/dma/Kconfig.nios2_msgdma"
+
+source "drivers/dma/Kconfig.sam0"
 
 endif # DMA

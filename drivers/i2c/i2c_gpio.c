@@ -22,8 +22,8 @@
 
 #include <device.h>
 #include <errno.h>
-#include <gpio.h>
-#include <i2c.h>
+#include <drivers/gpio.h>
+#include <drivers/i2c.h>
 #include "i2c_bitbang.h"
 
 /* Driver config */
@@ -45,14 +45,45 @@ static void i2c_gpio_set_scl(void *io_context, int state)
 {
 	struct i2c_gpio_context *context = io_context;
 
+#ifdef CONFIG_I2C_GPIO_SCL_NO_OPENDRAIN
+	if (state)
+		gpio_pin_configure(context->gpio, context->scl_pin,
+				   GPIO_DIR_IN);
+	else {
+		gpio_pin_write(context->gpio, context->scl_pin, 0);
+		gpio_pin_configure(context->gpio, context->scl_pin,
+				   GPIO_DIR_OUT);
+	}
+#else
 	gpio_pin_write(context->gpio, context->scl_pin, state);
+#endif
 }
 
 static void i2c_gpio_set_sda(void *io_context, int state)
 {
 	struct i2c_gpio_context *context = io_context;
 
+#ifdef CONFIG_I2C_GPIO_SDA_NO_OPENDRAIN
+	if (state)
+		gpio_pin_configure(context->gpio, context->sda_pin,
+				   GPIO_DIR_IN);
+	else {
+		gpio_pin_write(context->gpio, context->sda_pin, 0);
+		gpio_pin_configure(context->gpio, context->sda_pin,
+				   GPIO_DIR_OUT);
+	}
+#else
 	gpio_pin_write(context->gpio, context->sda_pin, state);
+#endif
+}
+
+static int i2c_gpio_get_scl(void *io_context)
+{
+	struct i2c_gpio_context *context = io_context;
+	u32_t state;
+
+	gpio_pin_read(context->gpio, context->scl_pin, &state);
+	return state;
 }
 
 static int i2c_gpio_get_sda(void *io_context)
@@ -67,6 +98,7 @@ static int i2c_gpio_get_sda(void *io_context)
 static const struct i2c_bitbang_io io_fns = {
 	.set_scl = &i2c_gpio_set_scl,
 	.set_sda = &i2c_gpio_set_sda,
+	.get_scl = &i2c_gpio_get_scl,
 	.get_sda = &i2c_gpio_get_sda,
 };
 
@@ -102,6 +134,19 @@ static int i2c_gpio_init(struct device *dev)
 	}
 	context->sda_pin = config->sda_pin;
 	context->scl_pin = config->scl_pin;
+
+#ifdef CONFIG_I2C_GPIO_SDA_NO_OPENDRAIN
+	gpio_pin_configure(context->gpio, context->sda_pin, GPIO_DIR_IN);
+#else
+	gpio_pin_write(context->gpio, context->sda_pin, 1);
+	gpio_pin_configure(context->gpio, context->sda_pin, GPIO_DIR_OUT);
+#endif
+#ifdef CONFIG_I2C_GPIO_SCL_NO_OPENDRAIN
+	gpio_pin_configure(context->gpio, context->scl_pin, GPIO_DIR_IN);
+#else
+	gpio_pin_write(context->gpio, context->scl_pin, 1);
+	gpio_pin_configure(context->gpio, context->scl_pin, GPIO_DIR_OUT);
+#endif
 
 	i2c_bitbang_init(&context->bitbang, &io_fns, context);
 

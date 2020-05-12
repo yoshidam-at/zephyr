@@ -44,7 +44,7 @@ static void sntp_pkt_dump(struct sntp_pkt *pkt)
 }
 
 static s32_t parse_response(u8_t *data, u16_t len, u32_t orig_ts,
-			    u64_t *epoch_time)
+			    struct sntp_time *time)
 {
 	struct sntp_pkt *pkt = (struct sntp_pkt *)data;
 	u32_t ts;
@@ -54,11 +54,6 @@ static s32_t parse_response(u8_t *data, u16_t len, u32_t orig_ts,
 	if (ntohl(pkt->orig_tm_s) != orig_ts) {
 		NET_DBG("Mismatch originate timestamp: %d, expect: %d",
 			ntohl(pkt->orig_tm_s), orig_ts);
-		return -EINVAL;
-	}
-
-	if (LVM_GET_LI(pkt->lvm) > SNTP_LI_MAX) {
-		NET_DBG("Unexpected LI: %d", LVM_GET_LI(pkt->lvm));
 		return -EINVAL;
 	}
 
@@ -81,6 +76,7 @@ static s32_t parse_response(u8_t *data, u16_t len, u32_t orig_ts,
 		return -EINVAL;
 	}
 
+	time->fraction = ntohl(pkt->tx_tm_f);
 	ts = ntohl(pkt->tx_tm_s);
 
 	/* Check if most significant bit is set */
@@ -89,7 +85,7 @@ static s32_t parse_response(u8_t *data, u16_t len, u32_t orig_ts,
 		 * on 1 January 1900.
 		 */
 		if (ts >= OFFSET_1970_JAN_1) {
-			*epoch_time = ts - OFFSET_1970_JAN_1;
+			time->seconds = ts - OFFSET_1970_JAN_1;
 		} else {
 			return -EINVAL;
 		}
@@ -97,22 +93,27 @@ static s32_t parse_response(u8_t *data, u16_t len, u32_t orig_ts,
 		/* UTC time is reckoned from 6h 28m 16s UTC
 		 * on 7 February 2036.
 		 */
-		*epoch_time = ts + 0x100000000 - OFFSET_1970_JAN_1;
+		time->seconds = ts + 0x100000000ULL - OFFSET_1970_JAN_1;
 	}
 
 	return 0;
 }
 
 static int sntp_recv_response(struct sntp_ctx *sntp, u32_t timeout,
-			      u64_t *epoch_time)
+			      struct sntp_time *time)
 {
 	struct sntp_pkt buf = { 0 };
 	int status;
 	int rcvd;
 
-	if (poll(sntp->sock.fds, sntp->sock.nfds, timeout) < 0) {
+	status = poll(sntp->sock.fds, sntp->sock.nfds, timeout);
+	if (status < 0) {
 		NET_ERR("Error in poll:%d", errno);
 		return -errno;
+	}
+
+	if (status == 0) {
+		return -ETIMEDOUT;
 	}
 
 	rcvd = recv(sntp->sock.fd, (u8_t *)&buf, sizeof(buf), 0);
@@ -126,7 +127,7 @@ static int sntp_recv_response(struct sntp_ctx *sntp, u32_t timeout,
 
 	status = parse_response((u8_t *)&buf, sizeof(buf),
 				sntp->expected_orig_ts,
-				epoch_time);
+				time);
 	return status;
 }
 
@@ -170,10 +171,20 @@ int sntp_init(struct sntp_ctx *ctx, struct sockaddr *addr, socklen_t addr_len)
 
 int sntp_request(struct sntp_ctx *ctx, u32_t timeout, u64_t *epoch_time)
 {
+	struct sntp_time time;
+	int res = sntp_query(ctx, timeout, &time);
+
+	*epoch_time = time.seconds;
+
+	return res;
+}
+
+int sntp_query(struct sntp_ctx *ctx, u32_t timeout, struct sntp_time *time)
+{
 	struct sntp_pkt tx_pkt = { 0 };
 	int ret = 0;
 
-	if (!ctx || !epoch_time) {
+	if (!ctx || !time) {
 		return -EFAULT;
 	}
 
@@ -190,12 +201,12 @@ int sntp_request(struct sntp_ctx *ctx, u32_t timeout, u64_t *epoch_time)
 		return ret;
 	}
 
-	return sntp_recv_response(ctx, timeout, epoch_time);
+	return sntp_recv_response(ctx, timeout, time);
 }
 
 void sntp_close(struct sntp_ctx *ctx)
 {
 	if (ctx) {
-		close(ctx->sock.fd);
+		(void)close(ctx->sock.fd);
 	}
 }

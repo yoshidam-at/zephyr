@@ -7,6 +7,16 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+# Setting shared by different subsystems
+config UART_CONSOLE_ON_DEV_NAME
+	string "Device Name of UART Device for UART Console"
+	default "$(dt_str_val,DT_UART_CONSOLE_ON_DEV_NAME)" if HAS_DTS
+	default "UART_0"
+	depends on (UART_CONSOLE || CONSOLE_SUBSYS)
+	help
+	  This option specifies the name of UART device to be used for
+	  UART console.
+
 menuconfig CONSOLE
 	bool "Console drivers"
 
@@ -41,18 +51,9 @@ config UART_CONSOLE
 	  Enable this option to use one UART for console. Make sure
 	  CONFIG_UART_CONSOLE_ON_DEV_NAME is also set correctly.
 
-if !HAS_DTS
-config UART_CONSOLE_ON_DEV_NAME
-	string "Device Name of UART Device for UART Console"
-	default "UART_0"
-	depends on UART_CONSOLE
-	help
-	  This option specifies the name of UART device to be used for
-	  UART console.
-endif
-
 config UART_CONSOLE_INIT_PRIORITY
 	int "Init priority"
+	default 95 if USB_UART_CONSOLE
 	default 60
 	depends on UART_CONSOLE
 	help
@@ -167,6 +168,7 @@ config IPM_CONSOLE_RECEIVER
 config IPM_CONSOLE_STACK_SIZE
 	int "Stack size for IPM console receiver thread"
 	depends on IPM_CONSOLE_RECEIVER
+	default 2048 if COVERAGE
 	default 512
 	help
 	  Each instance of the IPM console receiver driver creates a worker
@@ -191,15 +193,14 @@ config	UART_PIPE
 	  data (as contrary to console UART driver) and all aspects of received
 	  protocol data are handled by application provided callback.
 
-if !HAS_DTS
 config UART_PIPE_ON_DEV_NAME
 	string "Device Name of UART Device for pipe UART"
+	default "$(dt_str_val,DT_UART_PIPE_ON_DEV_NAME)" if HAS_DTS
 	default "UART_0"
 	depends on UART_PIPE
 	help
 	  This option specifies the name of UART device to be used
 	  for pipe UART.
-endif
 
 config UART_MCUMGR
 	bool "Enable mcumgr UART driver"
@@ -212,15 +213,14 @@ config UART_MCUMGR
 	  data are handled by an application provided callback.
 
 if UART_MCUMGR
-if !HAS_DTS
+
 config UART_MCUMGR_ON_DEV_NAME
 	string "Device Name of UART Device for mcumgr UART"
+	default "$(dt_str_val,DT_UART_MCUMGR_ON_DEV_NAME)" if HAS_DTS
 	default "UART_0"
-	depends on UART_MCUMGR
 	help
 	  This option specifies the name of UART device to be used
 	  for mcumgr UART.
-endif # !HAS_DTS
 
 config UART_MCUMGR_RX_BUF_SIZE
 	int "Size of receive buffer for mcumgr fragments received over UART, in bytes"
@@ -300,5 +300,8 @@ config NATIVE_POSIX_CONSOLE_INIT_PRIORITY
 	help
 	  Device driver initialization priority.
 
-source "drivers/console/Kconfig.telnet"
+module = UART_CONSOLE
+module-str = UART console
+source "subsys/logging/Kconfig.template.log_config"
+
 endif

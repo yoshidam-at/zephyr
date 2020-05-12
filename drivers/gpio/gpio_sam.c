@@ -9,7 +9,7 @@
 #include <device.h>
 #include <init.h>
 #include <soc.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 
 #include "gpio_utils.h"
 
@@ -66,7 +66,7 @@ static int gpio_sam_config_pin(Pio * const pio, u32_t mask, int flags)
 		/* Disable the interrupt. */
 		pio->PIO_IDR = mask;
 
-		/* Disable ther additional interrupt modes. */
+		/* Disable their additional interrupt modes. */
 		pio->PIO_AIMDR = mask;
 	}
 
@@ -193,7 +193,7 @@ static void gpio_sam_isr(void *arg)
 
 	int_stat = pio->PIO_ISR;
 
-	_gpio_fire_callbacks(&context->cb, dev, int_stat);
+	gpio_fire_callbacks(&context->cb, dev, int_stat);
 }
 
 static int gpio_sam_manage_callback(struct device *port,
@@ -202,7 +202,7 @@ static int gpio_sam_manage_callback(struct device *port,
 {
 	struct gpio_sam_runtime *context = port->driver_data;
 
-	return _gpio_manage_callback(&context->cb, callback, set);
+	return gpio_manage_callback(&context->cb, callback, set);
 }
 
 static int gpio_sam_enable_callback(struct device *port,

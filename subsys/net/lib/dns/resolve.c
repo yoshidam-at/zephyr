@@ -20,6 +20,7 @@ LOG_MODULE_REGISTER(net_dns_resolve, CONFIG_DNS_RESOLVER_LOG_LEVEL);
 
 #include <net/net_ip.h>
 #include <net/net_pkt.h>
+#include <net/net_mgmt.h>
 #include <net/dns_resolve.h>
 #include "dns_pack.h"
 
@@ -31,13 +32,6 @@ LOG_MODULE_REGISTER(net_dns_resolve, CONFIG_DNS_RESOLVER_LOG_LEVEL);
 
 #define LLMNR_IPV4_ADDR "224.0.0.252:5355"
 #define LLMNR_IPV6_ADDR "[ff02::1:3]:5355"
-
-static int dns_write(struct dns_resolve_context *ctx,
-		     int server_idx,
-		     int query_idx,
-		     struct net_buf *dns_data,
-		     struct net_buf *dns_qname,
-		     int hop_limit);
 
 #define DNS_BUF_TIMEOUT 500 /* ms */
 
@@ -79,11 +73,18 @@ NET_BUF_POOL_DEFINE(dns_qname_pool, DNS_RESOLVER_BUF_CTR, DNS_MAX_NAME_LEN,
 
 static struct dns_resolve_context dns_default_ctx;
 
+static int dns_write(struct dns_resolve_context *ctx,
+		     int server_idx,
+		     int query_idx,
+		     struct net_buf *dns_data,
+		     struct net_buf *dns_qname,
+		     int hop_limit);
+
 static bool server_is_mdns(sa_family_t family, struct sockaddr *addr)
 {
 	if (family == AF_INET) {
 		if (net_ipv4_is_addr_mcast(&net_sin(addr)->sin_addr) &&
-		    net_sin(addr)->sin_addr.s4_addr[3] == 251) {
+		    net_sin(addr)->sin_addr.s4_addr[3] == 251U) {
 			return true;
 		}
 
@@ -106,7 +107,7 @@ static bool server_is_llmnr(sa_family_t family, struct sockaddr *addr)
 {
 	if (family == AF_INET) {
 		if (net_ipv4_is_addr_mcast(&net_sin(addr)->sin_addr) &&
-		    net_sin(addr)->sin_addr.s4_addr[3] == 252) {
+		    net_sin(addr)->sin_addr.s4_addr[3] == 252U) {
 			return true;
 		}
 
@@ -136,7 +137,7 @@ static void dns_postprocess_server(struct dns_resolve_context *ctx, int idx)
 				server_is_llmnr(AF_INET, addr);
 		}
 
-		if (net_sin(addr)->sin_port == 0) {
+		if (net_sin(addr)->sin_port == 0U) {
 			if (IS_ENABLED(CONFIG_MDNS_RESOLVER) &&
 			    ctx->servers[idx].is_mdns) {
 				/* We only use 5353 as a default port
@@ -164,7 +165,7 @@ static void dns_postprocess_server(struct dns_resolve_context *ctx, int idx)
 				server_is_llmnr(AF_INET6, addr);
 		}
 
-		if (net_sin6(addr)->sin6_port == 0) {
+		if (net_sin6(addr)->sin6_port == 0U) {
 			if (IS_ENABLED(CONFIG_MDNS_RESOLVER) &&
 			    ctx->servers[idx].is_mdns) {
 				net_sin6(addr)->sin6_port = htons(5353);
@@ -196,6 +197,7 @@ int dns_resolve_init(struct dns_resolve_context *ctx, const char *servers[],
 	struct sockaddr *local_addr = NULL;
 	socklen_t addr_len = 0;
 	int i = 0, idx = 0;
+	struct net_if *iface;
 	int ret, count;
 
 	if (!ctx) {
@@ -222,8 +224,12 @@ int dns_resolve_init(struct dns_resolve_context *ctx, const char *servers[],
 
 			dns_postprocess_server(ctx, idx);
 
-			NET_DBG("[%d] %s", i, log_strdup(servers[i]));
-
+			NET_DBG("[%d] %s%s%s", i, log_strdup(servers[i]),
+				IS_ENABLED(CONFIG_MDNS_RESOLVER) ?
+				(ctx->servers[i].is_mdns ? " mDNS" : "") : "",
+				IS_ENABLED(CONFIG_LLMNR_RESOLVER) ?
+				(ctx->servers[i].is_llmnr ?
+							 " LLMNR" : "") : "");
 			idx++;
 		}
 	}
@@ -244,6 +250,11 @@ int dns_resolve_init(struct dns_resolve_context *ctx, const char *servers[],
 #if defined(CONFIG_NET_IPV6)
 			local_addr = (struct sockaddr *)&local_addr6;
 			addr_len = sizeof(struct sockaddr_in6);
+
+			if (IS_ENABLED(CONFIG_MDNS_RESOLVER) &&
+			    ctx->servers[i].is_mdns) {
+				local_addr6.sin6_port = htons(5353);
+			}
 #else
 			continue;
 #endif
@@ -253,6 +264,11 @@ int dns_resolve_init(struct dns_resolve_context *ctx, const char *servers[],
 #if defined(CONFIG_NET_IPV4)
 			local_addr = (struct sockaddr *)&local_addr4;
 			addr_len = sizeof(struct sockaddr_in);
+
+			if (IS_ENABLED(CONFIG_MDNS_RESOLVER) &&
+			    ctx->servers[i].is_mdns) {
+				local_addr4.sin_port = htons(5353);
+			}
 #else
 			continue;
 #endif
@@ -277,6 +293,25 @@ int dns_resolve_init(struct dns_resolve_context *ctx, const char *servers[],
 			NET_DBG("Cannot bind DNS context (%d)", ret);
 			return ret;
 		}
+
+		iface = net_context_get_iface(ctx->servers[i].net_ctx);
+
+		if (IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)) {
+			net_mgmt_event_notify_with_info(
+				NET_EVENT_DNS_SERVER_ADD,
+				iface, (void *)&ctx->servers[i].dns_server,
+				sizeof(struct sockaddr));
+		} else {
+			net_mgmt_event_notify(NET_EVENT_DNS_SERVER_ADD, iface);
+		}
+
+#if defined(CONFIG_NET_IPV6)
+		local_addr6.sin6_port = 0;
+#endif
+
+#if defined(CONFIG_NET_IPV4)
+		local_addr4.sin_port = 0;
+#endif
 
 		count++;
 	}
@@ -335,17 +370,15 @@ static int dns_read(struct dns_resolve_context *ctx,
 	/* index that points to the current answer being analyzed */
 	int answer_ptr;
 	int data_len;
-	int offset;
 	int items;
 	int ret;
 	int server_idx, query_idx;
 
-	data_len = min(net_pkt_appdatalen(pkt), DNS_RESOLVER_MAX_BUF_SIZE);
-	offset = net_pkt_get_len(pkt) - data_len;
+	data_len = MIN(net_pkt_remaining_data(pkt), DNS_RESOLVER_MAX_BUF_SIZE);
 
 	/* TODO: Instead of this temporary copy, just use the net_pkt directly.
 	 */
-	ret = net_frag_linear_copy(dns_data, pkt->frags, offset, data_len);
+	ret = net_pkt_read(pkt, dns_data->data, data_len);
 	if (ret < 0) {
 		ret = DNS_EAI_MEMORY;
 		goto quit;
@@ -380,14 +413,25 @@ static int dns_read(struct dns_resolve_context *ctx,
 	}
 
 	if (dns_header_qdcount(dns_msg.msg) != 1) {
-		ret = DNS_EAI_FAIL;
-		goto quit;
+		/* For mDNS (when dns_id == 0) the query count is 0 */
+		if (*dns_id > 0) {
+			ret = DNS_EAI_FAIL;
+			goto quit;
+		}
 	}
 
 	ret = dns_unpack_response_query(&dns_msg);
 	if (ret < 0) {
-		ret = DNS_EAI_FAIL;
-		goto quit;
+		/* Check mDNS like above */
+		if (*dns_id > 0) {
+			ret = DNS_EAI_FAIL;
+			goto quit;
+		}
+
+		/* mDNS responses to do not have the query part so the
+		 * answer starts immediately after the header.
+		 */
+		dns_msg.answer_offset = dns_msg.query_offset;
 	}
 
 	if (ctx->queries[query_idx].query_type == DNS_QUERY_TYPE_A) {
@@ -617,7 +661,6 @@ static int dns_write(struct dns_resolve_context *ctx,
 	enum dns_query_type query_type;
 	struct net_context *net_ctx;
 	struct sockaddr *server;
-	struct net_pkt *pkt;
 	int server_addr_len;
 	u16_t dns_id;
 	int ret;
@@ -631,43 +674,21 @@ static int dns_write(struct dns_resolve_context *ctx,
 				 dns_qname->data, dns_qname->len, dns_id,
 				 (enum dns_rr_type)query_type);
 	if (ret < 0) {
-		ret = -EINVAL;
-		goto quit;
+		return -EINVAL;
 	}
 
-	pkt = net_pkt_get_tx(net_ctx, ctx->buf_timeout);
-	if (!pkt) {
-		ret = -ENOMEM;
-		goto quit;
-	}
-
-	if (hop_limit > 0) {
-#if defined(CONFIG_NET_IPV6)
-		if (net_context_get_family(net_ctx) == AF_INET6) {
-			net_pkt_set_ipv6_hop_limit(pkt, hop_limit);
-		} else
-#endif
-#if defined(CONFIG_NET_IPV4)
-		if (net_context_get_family(net_ctx) == AF_INET) {
-			net_pkt_set_ipv4_ttl(pkt, hop_limit);
-		} else
-#endif
-		{
-		}
-	}
-
-	ret = net_pkt_append_all(pkt, dns_data->len, dns_data->data,
-				 ctx->buf_timeout);
-	if (ret < 0) {
-		ret = -ENOMEM;
-		goto quit;
+	if (IS_ENABLED(CONFIG_NET_IPV6) &&
+	    net_context_get_family(net_ctx) == AF_INET6) {
+		net_context_set_ipv6_hop_limit(net_ctx, hop_limit);
+	} else if (IS_ENABLED(CONFIG_NET_IPV4) &&
+		   net_context_get_family(net_ctx) == AF_INET) {
+		net_context_set_ipv4_ttl(net_ctx, hop_limit);
 	}
 
 	ret = net_context_recv(net_ctx, cb_recv, K_NO_WAIT, ctx);
 	if (ret < 0 && ret != -EALREADY) {
 		NET_DBG("Could not receive from socket (%d)", ret);
-		net_pkt_unref(pkt);
-		goto quit;
+		return ret;
 	}
 
 	if (server->sa_family == AF_INET) {
@@ -676,12 +697,12 @@ static int dns_write(struct dns_resolve_context *ctx,
 		server_addr_len = sizeof(struct sockaddr_in6);
 	}
 
-	ret = net_context_sendto(pkt, server, server_addr_len, NULL,
-				 K_NO_WAIT, NULL, NULL);
+	ret = net_context_sendto(net_ctx, dns_data->data, dns_data->len,
+				 server, server_addr_len, NULL,
+				 K_NO_WAIT, NULL);
 	if (ret < 0) {
 		NET_DBG("Cannot send query (%d)", ret);
-		net_pkt_unref(pkt);
-		goto quit;
+		return ret;
 	}
 
 	ret = k_delayed_work_submit(&ctx->queries[query_idx].timer,
@@ -691,18 +712,16 @@ static int dns_write(struct dns_resolve_context *ctx,
 			"timeout %u ret %d",
 			query_idx, server_idx, dns_id,
 			ctx->queries[query_idx].timeout, ret);
-		goto quit;
-	} else {
-		NET_DBG("[%u] submitting work to server idx %d for id %u "
-			"timeout %u",
-			query_idx, server_idx, dns_id,
-			ctx->queries[query_idx].timeout);
+		return ret;
 	}
 
-	ret = 0;
 
-quit:
-	return ret;
+	NET_DBG("[%u] submitting work to server idx %d for id %u "
+		"timeout %u",
+		query_idx, server_idx, dns_id,
+		ctx->queries[query_idx].timeout);
+
+	return 0;
 }
 
 int dns_resolve_cancel(struct dns_resolve_context *ctx, u16_t dns_id)
@@ -831,19 +850,9 @@ try_resolve:
 
 	ctx->queries[i].id = sys_rand32_get();
 
-	/* Do this immediately after calculating the Id so that the unit
-	 * test will work properly.
-	 */
-	if (dns_id) {
-		*dns_id = ctx->queries[i].id;
-
-		NET_DBG("DNS id will be %u", *dns_id);
-	}
-
-	mdns_query = false;
-
 	/* If mDNS is enabled, then send .local queries only to multicast
-	 * address.
+	 * address. For mDNS the id should be set to 0, see RFC 6762 ch. 18.1
+	 * for details.
 	 */
 	if (IS_ENABLED(CONFIG_MDNS_RESOLVER)) {
 		const char *ptr = strrchr(query, '.');
@@ -851,7 +860,18 @@ try_resolve:
 		/* Note that we memcmp() the \0 here too */
 		if (ptr && !memcmp(ptr, (const void *){ ".local" }, 7)) {
 			mdns_query = true;
+
+			ctx->queries[i].id = 0;
 		}
+	}
+
+	/* Do this immediately after calculating the Id so that the unit
+	 * test will work properly.
+	 */
+	if (dns_id) {
+		*dns_id = ctx->queries[i].id;
+
+		NET_DBG("DNS id will be %u", *dns_id);
 	}
 
 	for (j = 0; j < SERVER_COUNT; j++) {
@@ -941,6 +961,21 @@ int dns_resolve_close(struct dns_resolve_context *ctx)
 
 	for (i = 0; i < SERVER_COUNT; i++) {
 		if (ctx->servers[i].net_ctx) {
+			struct net_if *iface;
+
+			iface = net_context_get_iface(ctx->servers[i].net_ctx);
+
+			if (IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)) {
+				net_mgmt_event_notify_with_info(
+					NET_EVENT_DNS_SERVER_DEL,
+					iface,
+					(void *)&ctx->servers[i].dns_server,
+					sizeof(struct sockaddr));
+			} else {
+				net_mgmt_event_notify(NET_EVENT_DNS_SERVER_DEL,
+						      iface);
+			}
+
 			net_context_put(ctx->servers[i].net_ctx);
 		}
 	}

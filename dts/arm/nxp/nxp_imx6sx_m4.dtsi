@@ -23,7 +23,7 @@
 		cpu@1 {
 			device_type = "cpu";
 			compatible = "arm,cortex-m4f";
-			reg = <0>;
+			reg = <1>;
 		};
 	};
 
@@ -249,6 +249,32 @@
 			       RDC_DOMAIN_PERM(M4_DOMAIN_ID,\
 					       RDC_DOMAIN_PERM_RW))>;
 			label = "MU_B";
+			status = "disabled";
+		};
+
+		epit1:epit@420d0000 {
+			compatible = "nxp,imx-epit";
+			reg = <0x420d0000 0x4000>;
+			interrupts = <56 0>;
+			prescaler = <0>;
+			rdc = <(RDC_DOMAIN_PERM(A9_DOMAIN_ID,\
+					       RDC_DOMAIN_PERM_RW)|\
+			       RDC_DOMAIN_PERM(M4_DOMAIN_ID,\
+					       RDC_DOMAIN_PERM_RW))>;
+			label = "EPIT_1";
+			status = "disabled";
+		};
+
+		epit2:epit@420d4000 {
+			compatible = "nxp,imx-epit";
+			reg = <0x420d4000 0x4000>;
+			interrupts = <57 0>;
+			prescaler = <0>;
+			rdc = <(RDC_DOMAIN_PERM(A9_DOMAIN_ID,\
+					       RDC_DOMAIN_PERM_RW)|\
+			       RDC_DOMAIN_PERM(M4_DOMAIN_ID,\
+					       RDC_DOMAIN_PERM_RW))>;
+			label = "EPIT_2";
 			status = "disabled";
 		};
 	};

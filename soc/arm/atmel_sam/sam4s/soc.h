@@ -26,7 +26,7 @@
 #include <sam4s16b.h>
 #elif defined(CONFIG_SOC_PART_NUMBER_SAM4S8C)
 #include <sam4s8c.h>
-#elif defined(CONFIG_SOC_PART_NUMBER_SAM4S18B)
+#elif defined(CONFIG_SOC_PART_NUMBER_SAM4S8B)
 #include <sam4s8b.h>
 #elif defined(CONFIG_SOC_PART_NUMBER_SAM4S4C)
 #include <sam4s4c.h>
@@ -52,7 +52,7 @@
 #endif /* !_ASMLANGUAGE */
 
 /** Processor Clock (HCLK) Frequency */
-#define SOC_ATMEL_SAM_HCLK_FREQ_HZ CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC
+#define SOC_ATMEL_SAM_HCLK_FREQ_HZ DT_ARM_CORTEX_M4_0_CLOCK_FREQUENCY
 
 /** Master Clock (MCK) Frequency */
 #define SOC_ATMEL_SAM_MCK_FREQ_HZ SOC_ATMEL_SAM_HCLK_FREQ_HZ

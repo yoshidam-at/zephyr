@@ -25,7 +25,7 @@
 #define _RESET_SECTION_NAME reset
 
 /* This linker script requires the following macros to be defined in the
- * SOC-specfic linker script. All of these values can be found defined
+ * SOC-specific linker script. All of these values can be found defined
  * in system.h for CPU configurations that can generate a HAL.
  *
  * _RESET_VECTOR     CPU entry point at boot
@@ -141,10 +141,16 @@ SECTIONS
 
     SECTION_PROLOGUE(_RODATA_SECTION_NAME,,)
         {
+        . = ALIGN(4);
+
         *(.rodata)
         *(".rodata.*")
         *(.gnu.linkonce.r.*)
 
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-rodata.ld>
 #ifdef CONFIG_SOC_RODATA_LD
 #include <soc-rodata.ld>
 #endif
@@ -154,6 +160,7 @@ SECTIONS
 #include <custom-rodata.ld>
 #endif
 
+        . = ALIGN(4);
         } GROUP_LINK_IN(ROMABLE_REGION)
 
     _image_rom_end = .;
@@ -192,6 +199,10 @@ SECTIONS
         *(.data)
         *(".data.*")
 
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-rwdata.ld>
 #ifdef CONFIG_SOC_RWDATA_LD
 #include <soc-rwdata.ld>
 #endif
@@ -220,6 +231,11 @@ SECTIONS
 
         *(.sdata .sdata.* .gnu.linkonce.s.*)
         *(.sdata2 .sdata2.* .gnu.linkonce.s2.*)
+
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-ram-sections.ld>
 
         } GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
 
@@ -257,6 +273,10 @@ SECTIONS
 #ifdef CONFIG_SOC_NOINIT_LD
 #include <soc-noinit.ld>
 #endif
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-noinit.ld>
 
         } GROUP_LINK_IN(RAMABLE_REGION)
 
@@ -270,10 +290,10 @@ SECTIONS
 /* Located in project source directory */
 #include <custom-sections.ld>
 #endif
-
-#ifdef CONFIG_GEN_ISR_TABLES
-#include <linker/intlist.ld>
-#endif
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-sections.ld>
 
 #include <linker/debug-sections.ld>
 

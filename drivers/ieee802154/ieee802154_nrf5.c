@@ -7,7 +7,11 @@
  */
 
 #define LOG_MODULE_NAME ieee802154_nrf5
+#if defined(CONFIG_IEEE802154_DRIVER_LOG_LEVEL)
 #define LOG_LEVEL CONFIG_IEEE802154_DRIVER_LOG_LEVEL
+#else
+#define LOG_LEVEL LOG_LEVEL_NONE
+#endif
 
 #include <logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
@@ -27,13 +31,12 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <net/openthread.h>
 #endif
 
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 #include <string.h>
 #include <random/rand32.h>
 
 #include <net/ieee802154_radio.h>
 
-#include "nrf52840.h"
 #include "ieee802154_nrf5.h"
 #include "nrf_802154.h"
 
@@ -61,7 +64,6 @@ static void nrf5_rx_thread(void *arg1, void *arg2, void *arg3)
 {
 	struct device *dev = (struct device *)arg1;
 	struct nrf5_802154_data *nrf5_radio = NRF5_802154_DATA(dev);
-	struct net_buf *frag = NULL;
 	struct net_pkt *pkt;
 	struct nrf5_802154_rx_frame *rx_frame;
 	u8_t pkt_len;
@@ -79,22 +81,6 @@ static void nrf5_rx_thread(void *arg1, void *arg2, void *arg3)
 
 		__ASSERT_NO_MSG(rx_frame->psdu);
 
-		LOG_DBG("Frame received");
-
-		pkt = net_pkt_get_reserve_rx(K_NO_WAIT);
-		if (!pkt) {
-			LOG_ERR("No pkt available");
-			goto drop;
-		}
-
-		frag = net_pkt_get_frag(pkt, K_NO_WAIT);
-		if (!frag) {
-			LOG_ERR("No frag available");
-			goto drop;
-		}
-
-		net_pkt_frag_insert(pkt, frag);
-
 		/* rx_mpdu contains length, psdu, fcs|lqi
 		 * The last 2 bytes contain LQI or FCS, depending if
 		 * automatic CRC handling is enabled or not, respectively.
@@ -106,11 +92,20 @@ static void nrf5_rx_thread(void *arg1, void *arg2, void *arg3)
 			pkt_len = rx_frame->psdu[0] -  NRF5_FCS_LENGTH;
 		}
 
-		 __ASSERT_NO_MSG(pkt_len <= CONFIG_NET_BUF_DATA_SIZE);
+		__ASSERT_NO_MSG(pkt_len <= CONFIG_NET_BUF_DATA_SIZE);
 
-		/* Skip length (first byte) and copy the payload */
-		memcpy(frag->data, rx_frame->psdu + 1, pkt_len);
-		net_buf_add(frag, pkt_len);
+		LOG_DBG("Frame received");
+
+		pkt = net_pkt_alloc_with_buffer(nrf5_radio->iface, pkt_len,
+						AF_UNSPEC, 0, K_NO_WAIT);
+		if (!pkt) {
+			LOG_ERR("No pkt available");
+			goto drop;
+		}
+
+		if (net_pkt_write(pkt, rx_frame->psdu + 1, pkt_len)) {
+			goto drop;
+		}
 
 		net_pkt_set_ieee802154_lqi(pkt, rx_frame->lqi);
 		net_pkt_set_ieee802154_rssi(pkt, rx_frame->rssi);
@@ -126,10 +121,10 @@ static void nrf5_rx_thread(void *arg1, void *arg2, void *arg3)
 		nrf_802154_buffer_free_raw(rx_frame->psdu);
 		rx_frame->psdu = NULL;
 
-		if (CONFIG_IEEE802154_DRIVER_LOG_LEVEL >= LOG_LEVEL_DBG) {
+		if (LOG_LEVEL >= LOG_LEVEL_DBG) {
 			net_analyze_stack(
 				"nRF5 rx stack",
-				K_THREAD_STACK_BUFFER(nrf5_radio->rx_stack),
+				Z_THREAD_STACK_BUFFER(nrf5_radio->rx_stack),
 				K_THREAD_STACK_SIZEOF(nrf5_radio->rx_stack));
 		}
 
@@ -348,7 +343,7 @@ static void nrf5_radio_irq(void *arg)
 	nrf_802154_radio_irq_handler();
 }
 
-static void nrf5_config(struct device *dev)
+static void nrf5_irq_config(struct device *dev)
 {
 	ARG_UNUSED(dev);
 
@@ -394,6 +389,47 @@ static void nrf5_iface_init(struct net_if *iface)
 	nrf5_radio->iface = iface;
 
 	ieee802154_init(iface);
+}
+
+int nrf5_configure(struct device *dev, enum ieee802154_config_type type,
+		   const struct ieee802154_config *config)
+{
+	ARG_UNUSED(dev);
+
+	switch (type) {
+	case IEEE802154_CONFIG_AUTO_ACK_FPB:
+		nrf_802154_auto_pending_bit_set(config->auto_ack_fpb.enabled);
+		break;
+
+	case IEEE802154_CONFIG_ACK_FPB:
+		if (config->ack_fpb.enabled) {
+			if (!nrf_802154_pending_bit_for_addr_set(
+						config->ack_fpb.addr,
+						config->ack_fpb.extended)) {
+				return -ENOMEM;
+			}
+
+			break;
+		}
+
+		if (config->ack_fpb.addr != NULL) {
+			if (!nrf_802154_pending_bit_for_addr_clear(
+						config->ack_fpb.addr,
+						config->ack_fpb.extended)) {
+				return -ENOENT;
+			}
+		} else {
+			nrf_802154_pending_bit_for_addr_reset(
+						config->ack_fpb.extended);
+		}
+
+		break;
+
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 /* nRF5 radio driver callbacks */
@@ -462,7 +498,7 @@ void nrf_802154_cca_failed(nrf_802154_cca_error_t error)
 }
 
 static const struct nrf5_802154_config nrf5_radio_cfg = {
-	.irq_config_func = nrf5_config,
+	.irq_config_func = nrf5_irq_config,
 };
 
 static struct ieee802154_radio_api nrf5_radio_api = {
@@ -476,6 +512,7 @@ static struct ieee802154_radio_api nrf5_radio_api = {
 	.start = nrf5_start,
 	.stop = nrf5_stop,
 	.tx = nrf5_tx,
+	.configure = nrf5_configure,
 };
 
 #if defined(CONFIG_NET_L2_IEEE802154)

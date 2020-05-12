@@ -20,10 +20,10 @@
 
 #include <kernel.h>
 #include <arch/cpu.h>
-#include <misc/__assert.h>
+#include <sys/__assert.h>
 #include <soc.h>
 #include <init.h>
-#include <uart.h>
+#include <drivers/uart.h>
 #include <linker/sections.h>
 
 /* definitions */
@@ -165,14 +165,14 @@ static void baudrate_set(struct device *dev,
 
 	/* upon reset, the system clock uses the intenal OSC @ 12MHz */
 
-	div = (16 * baudrate);
+	div = (baudrate * 16U);
 	rem = sys_clk_freq_hz % div;
 
 	/*
 	 * floating part of baud rate (LM3S6965 p.433), equivalent to
 	 * [float part of (SYSCLK / div)] * 64 + 0.5
 	 */
-	brdf = ((((rem * 64) << 1) / div) + 1) >> 1;
+	brdf = ((((rem * 64U) << 1) / div) + 1) >> 1;
 
 	/* integer part of baud rate (LM3S6965 p.433) */
 	brdi = sys_clk_freq_hz / div;
@@ -217,8 +217,8 @@ static inline void disable(struct device *dev)
 	uart->ctl &= ~UARTCTL_UARTEN;
 
 	/* ensure transmissions are complete */
-	while (uart->fr & UARTFR_BUSY)
-		;
+	while (uart->fr & UARTFR_BUSY) {
+	}
 
 	/* flush the FIFOs by disabling them */
 	uart->lcrh &= ~UARTLCRH_FEN;
@@ -304,8 +304,9 @@ static int uart_stellaris_poll_in(struct device *dev, unsigned char *c)
 {
 	volatile struct _uart *uart = UART_STRUCT(dev);
 
-	if (uart->fr & UARTFR_RXFE)
+	if (uart->fr & UARTFR_RXFE) {
 		return (-1);
+	}
 
 	/* got a character */
 	*c = (unsigned char)uart->dr;
@@ -327,8 +328,8 @@ static void uart_stellaris_poll_out(struct device *dev,
 {
 	volatile struct _uart *uart = UART_STRUCT(dev);
 
-	while (!poll_tx_ready(dev))
-		;
+	while (!poll_tx_ready(dev)) {
+	}
 
 	/* send a character */
 	uart->dr = (u32_t)c;
@@ -351,7 +352,7 @@ static int uart_stellaris_fifo_fill(struct device *dev, const u8_t *tx_data,
 	volatile struct _uart *uart = UART_STRUCT(dev);
 	u8_t num_tx = 0U;
 
-	while ((len - num_tx > 0) && ((uart->fr & UARTFR_TXFF) == 0)) {
+	while ((len - num_tx > 0) && ((uart->fr & UARTFR_TXFF) == 0U)) {
 		uart->dr = (u32_t)tx_data[num_tx++];
 	}
 
@@ -373,7 +374,7 @@ static int uart_stellaris_fifo_read(struct device *dev, u8_t *rx_data,
 	volatile struct _uart *uart = UART_STRUCT(dev);
 	u8_t num_rx = 0U;
 
-	while ((size - num_rx > 0) && ((uart->fr & UARTFR_RXFE) == 0)) {
+	while ((size - num_rx > 0) && ((uart->fr & UARTFR_RXFE) == 0U)) {
 		rx_data[num_rx++] = (u8_t)uart->dr;
 	}
 
@@ -420,8 +421,8 @@ static void uart_stellaris_irq_tx_enable(struct device *dev)
 		uart->ctl = (UARTCTL_UARTEN | UARTCTL_TXEN | UARTCTL_LBE);
 		uart->dr = 0U;
 
-		while (uart->fr & UARTFR_BUSY)
-			;
+		while (uart->fr & UARTFR_BUSY) {
+		}
 
 		/* restore control and baud rate settings */
 		disable(dev);
@@ -633,7 +634,7 @@ static void irq_config_func_0(struct device *port);
 
 static const struct uart_device_config uart_stellaris_dev_cfg_0 = {
 	.base = (u8_t *)DT_TI_STELLARIS_UART_4000C000_BASE_ADDRESS,
-	.sys_clk_freq = DT_UART_STELLARIS_CLK_FREQ,
+	.sys_clk_freq = DT_TI_STELLARIS_UART_4000C000_CLOCKS_CLOCK_FREQUENCY,
 
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = irq_config_func_0,
@@ -671,7 +672,7 @@ static void irq_config_func_1(struct device *port);
 
 static struct uart_device_config uart_stellaris_dev_cfg_1 = {
 	.base = (u8_t *)DT_TI_STELLARIS_UART_4000D000_BASE_ADDRESS,
-	.sys_clk_freq = DT_UART_STELLARIS_CLK_FREQ,
+	.sys_clk_freq = DT_TI_STELLARIS_UART_4000D000_CLOCKS_CLOCK_FREQUENCY,
 
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = irq_config_func_1,
@@ -709,7 +710,7 @@ static void irq_config_func_2(struct device *port);
 
 static const struct uart_device_config uart_stellaris_dev_cfg_2 = {
 	.base = (u8_t *)DT_TI_STELLARIS_UART_4000E000_BASE_ADDRESS,
-	.sys_clk_freq = DT_UART_STELLARIS_CLK_FREQ,
+	.sys_clk_freq = DT_TI_STELLARIS_UART_4000E000_CLOCKS_CLOCK_FREQUENCY,
 
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = irq_config_func_2,

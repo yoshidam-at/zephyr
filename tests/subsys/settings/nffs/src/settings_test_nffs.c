@@ -22,10 +22,12 @@ int test_export_block;
 
 int c2_var_count = 1;
 
-int c1_handle_get(int argc, char **argv, char *val, int val_len_max);
-int c1_handle_set(int argc, char **argv, void *value_ctx);
+int c1_handle_get(const char *name, char *val, int val_len_max);
+int c1_handle_set(const char *name, size_t len, settings_read_cb read_cb,
+		  void *cb_arg);
 int c1_handle_commit(void);
-int c1_handle_export(int (*cb)(const char *name, void *value, size_t val_len));
+int c1_handle_export(int (*cb)(const char *name,
+			       const void *value, size_t val_len));
 
 struct settings_handler c_test_handlers[] = {
 	{
@@ -39,60 +41,63 @@ struct settings_handler c_test_handlers[] = {
 
 
 
-int c1_handle_get(int argc, char **argv, char *val, int val_len_max)
+int c1_handle_get(const char *name, char *val, int val_len_max)
 {
 	test_get_called = 1;
+	const char *next;
 
-	if (argc == 1 && !strcmp(argv[0], "mybar")) {
-		val_len_max = min(val_len_max, sizeof(val8));
-		memcpy(val, &val8, min(val_len_max, sizeof(val8)));
+	if (settings_name_steq(name, "mybar", &next) && !next) {
+		val_len_max = MIN(val_len_max, sizeof(val8));
+		memcpy(val, &val8, MIN(val_len_max, sizeof(val8)));
 		return val_len_max;
 	}
 
-	if (argc == 1 && !strcmp(argv[0], "mybar16")) {
-		val_len_max = min(val_len_max, sizeof(val16));
-		memcpy(val, &val16, min(val_len_max, sizeof(val16)));
+	if (settings_name_steq(name, "mybar16", &next) && !next) {
+		val_len_max = MIN(val_len_max, sizeof(val16));
+		memcpy(val, &val16, MIN(val_len_max, sizeof(val16)));
 		return val_len_max;
 	}
 
-	if (argc == 1 && !strcmp(argv[0], "mybar64")) {
-		val_len_max = min(val_len_max, sizeof(val64));
-		memcpy(val, &val64, min(val_len_max, sizeof(val64)));
+	if (settings_name_steq(name, "mybar64", &next) && !next) {
+		val_len_max = MIN(val_len_max, sizeof(val64));
+		memcpy(val, &val64, MIN(val_len_max, sizeof(val64)));
 		return val_len_max;
 	}
 
 	return -ENOENT;
 }
 
-int c1_handle_set(int argc, char **argv, void *value_ctx)
+int c1_handle_set(const char *name, size_t len, settings_read_cb read_cb,
+		  void *cb_arg)
 {
 	int rc;
+	const char *next;
 	size_t val_len;
 
 	test_set_called = 1;
-	if (argc == 1 && !strcmp(argv[0], "mybar")) {
-		val_len = settings_val_get_len_cb(value_ctx);
+	if (settings_name_steq(name, "mybar", &next) && !next) {
+		val_len = len;
 		zassert_true(val_len == 1, "bad set-value size");
 
-		rc = settings_val_read_cb(value_ctx, &val8, sizeof(val8));
+		rc = read_cb(cb_arg, &val8, sizeof(val8));
 		zassert_true(rc >= 0, "SETTINGS_VALUE_SET callback");
 		return 0;
 	}
 
-	if (argc == 1 && !strcmp(argv[0], "mybar16")) {
-		val_len = settings_val_get_len_cb(value_ctx);
+	if (settings_name_steq(name, "mybar16", &next) && !next) {
+		val_len = len;
 		zassert_true(val_len == 2, "bad set-value size");
 
-		rc = settings_val_read_cb(value_ctx, &val16, sizeof(val16));
+		rc = read_cb(cb_arg, &val16, sizeof(val16));
 		zassert_true(rc >= 0, "SETTINGS_VALUE_SET callback");
 		return 0;
 	}
 
-	if (argc == 1 && !strcmp(argv[0], "mybar64")) {
-		val_len = settings_val_get_len_cb(value_ctx);
+	if (settings_name_steq(name, "mybar64", &next) && !next) {
+		val_len = len;
 		zassert_true(val_len == 8, "bad set-value size");
 
-		rc = settings_val_read_cb(value_ctx, &val64, sizeof(val64));
+		rc = read_cb(cb_arg, &val64, sizeof(val64));
 		zassert_true(rc >= 0, "SETTINGS_VALUE_SET callback");
 		return 0;
 	}
@@ -106,7 +111,8 @@ int c1_handle_commit(void)
 	return 0;
 }
 
-int c1_handle_export(int (*cb)(const char *name, void *value, size_t val_len))
+int c1_handle_export(int (*cb)(const char *name,
+			       const void *value, size_t val_len))
 {
 	if (test_export_block) {
 		return 0;
@@ -201,7 +207,7 @@ int settings_test_file_strstr(const char *fname, char const *string,
 {
 	int rc;
 	u32_t len;
-	u32_t rlen;
+	size_t rlen;
 	char *buf;
 	struct fs_dirent entry;
 

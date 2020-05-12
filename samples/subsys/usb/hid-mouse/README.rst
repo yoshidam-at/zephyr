@@ -11,7 +11,9 @@ by the Zephyr project. This very simple driver enumerates a board with a button
 into a mouse that has a left mouse button and optionally (depending on
 the number of buttons on the board) a right mouse button, X-axis movement,
 and Y-axis movement.
-This sample can be found under :file:`samples/subsys/usb/hid-mouse` in the
+If the USB peripheral driver supports remote wakeup feature, wakeup request
+will be performed on every button click if the bus is in suspended state.
+This sample can be found under :zephyr_file:`samples/subsys/usb/hid-mouse` in the
 Zephyr project tree.
 
 Requirements
@@ -23,14 +25,14 @@ GPIO button in your board.
 To use this sample, you will require a board that defines the user switch in its
 header file. The :file:`board.h` must define the following variables:
 
-- SW0_GPIO_CONTROLLER
-- SW0_GPIO_PIN
+- DT_ALIAS_SW0_GPIOS_CONTROLLER
+- DT_ALIAS_SW0_GPIOS_PIN
 
 The following variables are optional and depend on available board buttons:
 
-- For right-button: SW1_GPIO_CONTROLLER, SW1_GPIO_PIN
-- For X-axis: SW2_GPIO_CONTROLLER, SW2_GPIO_PIN
-- For Y-axis: SW3_GPIO_CONTROLLER, SW3_GPIO_PIN
+- For right-button: DT_ALIAS_SW1_GPIOS_CONTROLLER, DT_ALIAS_SW1_GPIOS_PIN
+- For X-axis: DT_ALIAS_SW2_GPIOS_CONTROLLER, DT_ALIAS_SW2_GPIOS_PIN
+- For Y-axis: DT_ALIAS_SW3_GPIOS_CONTROLLER, DT_ALIAS_SW3_GPIOS_PIN
 
 Building and Running
 ********************

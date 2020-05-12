@@ -9,7 +9,7 @@
  * @brief Private kernel definitions (ARM)
  *
  * This file contains private kernel structures definitions and various
- * other definitions for the ARM Cortex-M3 processor architecture.
+ * other definitions for the ARM Cortex-M processor architecture family.
  *
  * This file is also included by assembly language files which must #define
  * _ASMLANGUAGE before including this header file.  Note that kernel
@@ -20,28 +20,10 @@
 #ifndef ZEPHYR_ARCH_ARM_INCLUDE_KERNEL_ARCH_DATA_H_
 #define ZEPHYR_ARCH_ARM_INCLUDE_KERNEL_ARCH_DATA_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <toolchain.h>
 #include <linker/sections.h>
 #include <arch/cpu.h>
 #include <kernel_arch_thread.h>
-
-#ifndef _ASMLANGUAGE
-#include <kernel.h>
-#include <kernel_internal.h>
-#include <zephyr/types.h>
-#include <misc/dlist.h>
-#include <atomic.h>
-#endif
-
-#ifndef _ASMLANGUAGE
-
-typedef struct __esf _esf_t;
-
-#endif /* _ASMLANGUAGE */
 
 /* stacks */
 
@@ -51,20 +33,29 @@ typedef struct __esf _esf_t;
 #ifdef CONFIG_CPU_CORTEX_M
 #include <cortex_m/stack.h>
 #include <cortex_m/exc.h>
+#elif defined(CONFIG_CPU_CORTEX_R)
+#include <cortex_r/stack.h>
+#include <cortex_r/exc.h>
 #endif
 
 #ifndef _ASMLANGUAGE
+#include <kernel.h>
+#include <kernel_internal.h>
+#include <zephyr/types.h>
+#include <sys/dlist.h>
+#include <sys/atomic.h>
 
-struct _kernel_arch {
-	/* empty */
-};
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-typedef struct _kernel_arch _kernel_arch_t;
-
-#endif /* _ASMLANGUAGE */
+typedef struct __esf _esf_t;
+typedef struct __basic_sf _basic_sf_t;
 
 #ifdef __cplusplus
 }
 #endif
+
+#endif /* _ASMLANGUAGE */
 
 #endif /* ZEPHYR_ARCH_ARM_INCLUDE_KERNEL_ARCH_DATA_H_ */

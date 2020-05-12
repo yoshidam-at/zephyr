@@ -130,12 +130,14 @@ static int adc_nrfx_channel_setup(struct device *dev,
 
 static void adc_context_start_sampling(struct adc_context *ctx)
 {
-	ARG_UNUSED(ctx);
-
 	nrf_saadc_enable();
 
-	nrf_saadc_task_trigger(NRF_SAADC_TASK_START);
-	nrf_saadc_task_trigger(NRF_SAADC_TASK_SAMPLE);
+	if (ctx->sequence.calibrate) {
+		nrf_saadc_task_trigger(NRF_SAADC_TASK_CALIBRATEOFFSET);
+	} else {
+		nrf_saadc_task_trigger(NRF_SAADC_TASK_START);
+		nrf_saadc_task_trigger(NRF_SAADC_TASK_SAMPLE);
+	}
 }
 
 static void adc_context_update_buffer_pointer(struct adc_context *ctx,
@@ -272,7 +274,7 @@ static int start_read(struct device *dev, const struct adc_sequence *sequence)
 			/* Signal an error if a selected channel has not been
 			 * configured yet.
 			 */
-			if (m_data.positive_inputs[channel_id] == 0) {
+			if (m_data.positive_inputs[channel_id] == 0U) {
 				LOG_ERR("Channel %u not configured",
 					    channel_id);
 				return -EINVAL;
@@ -287,7 +289,7 @@ static int start_read(struct device *dev, const struct adc_sequence *sequence)
 			 * possible), the burst mode have to be deactivated.
 			 */
 			nrf_saadc_burst_set(channel_id,
-				(sequence->oversampling != 0 ?
+				(sequence->oversampling != 0U ?
 					NRF_SAADC_BURST_ENABLED :
 					NRF_SAADC_BURST_DISABLED));
 			nrf_saadc_channel_pos_input_set(
@@ -365,6 +367,17 @@ static void saadc_irq_handler(void *param)
 		nrf_saadc_disable();
 
 		adc_context_on_sampling_done(&m_data.ctx, dev);
+	} else if (nrf_saadc_event_check(NRF_SAADC_EVENT_CALIBRATEDONE)) {
+		nrf_saadc_event_clear(NRF_SAADC_EVENT_CALIBRATEDONE);
+
+		/*
+		 * The workaround for Nordic nRF52832 anomalies 86 and
+		 * 178 is an explicit STOP after CALIBRATEOFFSET
+		 * before issuing START.
+		 */
+		nrf_saadc_task_trigger(NRF_SAADC_TASK_STOP);
+		nrf_saadc_task_trigger(NRF_SAADC_TASK_START);
+		nrf_saadc_task_trigger(NRF_SAADC_TASK_SAMPLE);
 	}
 }
 
@@ -373,11 +386,13 @@ DEVICE_DECLARE(adc_0);
 static int init_saadc(struct device *dev)
 {
 	nrf_saadc_event_clear(NRF_SAADC_EVENT_END);
-	nrf_saadc_int_enable(NRF_SAADC_INT_END);
-	NRFX_IRQ_ENABLE(DT_NORDIC_NRF_SAADC_ADC_0_IRQ);
+	nrf_saadc_event_clear(NRF_SAADC_EVENT_CALIBRATEDONE);
+	nrf_saadc_int_enable(NRF_SAADC_INT_END
+			     | NRF_SAADC_INT_CALIBRATEDONE);
+	NRFX_IRQ_ENABLE(DT_NORDIC_NRF_SAADC_ADC_0_IRQ_0);
 
-	IRQ_CONNECT(DT_NORDIC_NRF_SAADC_ADC_0_IRQ,
-		    DT_NORDIC_NRF_SAADC_ADC_0_IRQ_PRIORITY,
+	IRQ_CONNECT(DT_NORDIC_NRF_SAADC_ADC_0_IRQ_0,
+		    DT_NORDIC_NRF_SAADC_ADC_0_IRQ_0_PRIORITY,
 		    saadc_irq_handler, DEVICE_GET(adc_0), 0);
 
 	adc_context_unlock_unconditionally(&m_data.ctx);
@@ -391,6 +406,7 @@ static const struct adc_driver_api adc_nrfx_driver_api = {
 #ifdef CONFIG_ADC_ASYNC
 	.read_async    = adc_nrfx_read_async,
 #endif
+	.ref_internal  = 600,
 };
 
 #ifdef CONFIG_ADC_0

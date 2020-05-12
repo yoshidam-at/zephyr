@@ -4,6 +4,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+# NOTE: This file is part of the old device tree scripts, which will be removed
+# later. They are kept to generate some legacy #defines via the
+# --deprecated-only flag.
+#
+# The new scripts are gen_defines.py, edtlib.py, and dtlib.py.
+
 from .globals import *
 
 ##
@@ -21,18 +27,14 @@ class DTDirective(object):
     #
     @staticmethod
     def get_label_string(label):
-        return convert_string_to_label(
-            '_'.join(x.strip() for x in label if x.strip()))
-
-    def __init__():
-        pass
+        return str_to_label('_'.join(x.strip() for x in label if x.strip()))
 
     ##
     # @brief Extract directive information.
     #
-    # @param node_address Address of node issueuing the directive.
+    # @param node_path Path to node issuing the directive.
     # @param prop Directive property name
     # @param def_label Define label string of node owning the directive.
     #
-    def extract(self, node_address, prop, def_label):
+    def extract(self, node_path, prop, def_label):
         pass

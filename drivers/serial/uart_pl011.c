@@ -9,7 +9,7 @@
 #include <init.h>
 #include <device.h>
 #include <soc.h>
-#include <uart.h>
+#include <drivers/uart.h>
 #include <arch/arm/cortex_m/cmsis.h>
 
 
@@ -133,7 +133,8 @@ struct pl011_data {
 		PL011_IMSC_PEIM | PL011_IMSC_BEIM | \
 		PL011_IMSC_OEIM)
 
-#define PL011_IMSC_MASK_ALL (PL011_ERROR_MASK | \
+#define PL011_IMSC_MASK_ALL (PL011_IMSC_OEIM | PL011_IMSC_BEIM | \
+		PL011_IMSC_PEIM | PL011_IMSC_FEIM | \
 		PL011_IMSC_RIMIM | PL011_IMSC_CTSMIM | \
 		PL011_IMSC_DCDMIM | PL011_IMSC_DSRMIM | \
 		PL011_IMSC_RXIM | PL011_IMSC_TXIM | \
@@ -171,7 +172,7 @@ static int pl011_set_baudrate(struct device *dev,
 {
 	/* Avoiding float calculations, bauddiv is left shifted by 6 */
 	u64_t bauddiv = (((u64_t)clk) << PL011_FBRD_WIDTH)
-				/ (16 * baudrate);
+				/ (baudrate * 16U);
 
 	/* Valid bauddiv value
 	 * uart_clk (min) >= 16 x baud_rate (max)
@@ -200,7 +201,7 @@ static bool pl011_is_readable(struct device *dev)
 {
 	if ((PL011_REGS(dev)->cr & PL011_CR_UARTEN) &&
 	    (PL011_REGS(dev)->cr & PL011_CR_RXE) &&
-	   ((PL011_REGS(dev)->fr & PL011_FR_RXFE) == 0)) {
+	   ((PL011_REGS(dev)->fr & PL011_FR_RXFE) == 0U)) {
 		return true;
 	}
 
@@ -235,7 +236,7 @@ static void pl011_poll_out(struct device *dev,
 static int pl011_fifo_fill(struct device *dev,
 				    const u8_t *tx_data, int len)
 {
-	u8_t num_tx = 0;
+	u8_t num_tx = 0U;
 
 	while (!(PL011_REGS(dev)->fr & PL011_FR_TXFF) &&
 	       (len - num_tx > 0)) {
@@ -247,7 +248,7 @@ static int pl011_fifo_fill(struct device *dev,
 static int pl011_fifo_read(struct device *dev,
 				    u8_t *rx_data, const int len)
 {
-	u8_t num_rx = 0;
+	u8_t num_rx = 0U;
 
 	while ((len - num_rx > 0) &&
 	       !(PL011_REGS(dev)->fr & PL011_FR_RXFE)) {
@@ -360,8 +361,8 @@ static int pl011_init(struct device *dev)
 	pl011_disable_fifo(dev);
 
 	/* Set baud rate */
-	ret = pl011_set_baudrate(dev, CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC,
-					DEV_DATA(dev)->baud_rate);
+	ret = pl011_set_baudrate(dev, DEV_CFG(dev)->sys_clk_freq,
+				      DEV_DATA(dev)->baud_rate);
 	if (ret != 0) {
 		return ret;
 	}
@@ -376,10 +377,10 @@ static int pl011_init(struct device *dev)
 	pl011_enable_fifo(dev);
 
 	/* initialize all IRQs as masked */
-	PL011_REGS(dev)->imsc = 0;
-	PL011_REGS(dev)->icr = PL011_REGS(dev)->icr;
+	PL011_REGS(dev)->imsc = 0U;
+	PL011_REGS(dev)->icr = PL011_IMSC_MASK_ALL;
 
-	PL011_REGS(dev)->dmacr = 0;
+	PL011_REGS(dev)->dmacr = 0U;
 	__ISB();
 	PL011_REGS(dev)->cr &= ~(BIT(14) | BIT(15) | BIT(1));
 	PL011_REGS(dev)->cr |= PL011_CR_RXE | PL011_CR_TXE;
@@ -413,7 +414,7 @@ static void pl011_irq_config_func_0(struct device *dev);
 
 static struct uart_device_config pl011_cfg_port_0 = {
 	.base = (u8_t *)DT_PL011_PORT0_BASE_ADDRESS,
-	.sys_clk_freq = CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC,
+	.sys_clk_freq = DT_PL011_PORT0_CLOCK_FREQUENCY,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = pl011_irq_config_func_0,
 #endif
@@ -467,7 +468,7 @@ static void pl011_irq_config_func_1(struct device *dev);
 
 static struct uart_device_config pl011_cfg_port_1 = {
 	.base = (u8_t *)DT_PL011_PORT1_BASE_ADDRESS,
-	.sys_clk_freq = CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC,
+	.sys_clk_freq = DT_PL011_PORT1_CLOCK_FREQUENCY,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = pl011_irq_config_func_1,
 #endif

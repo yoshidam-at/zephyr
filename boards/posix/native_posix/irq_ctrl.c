@@ -6,6 +6,7 @@
  * HW IRQ controller model
  */
 
+#include <stdint.h>
 #include <stdbool.h>
 #include "hw_models_top.h"
 #include "irq_ctrl.h"
@@ -97,7 +98,7 @@ int hw_irq_ctrl_get_highest_prio_irq(void)
 	int winner = -1;
 	int winner_prio = 256;
 
-	while (irq_status != 0) {
+	while (irq_status != 0U) {
 		int irq_nbr = find_lsb_set(irq_status) - 1;
 
 		irq_status &= ~((u64_t) 1 << irq_nbr);
@@ -123,14 +124,14 @@ u32_t hw_irq_ctrl_change_lock(u32_t new_lock)
 	irqs_locked = new_lock;
 
 	if ((previous_lock == true) && (new_lock == false)) {
-		if (irq_status != 0) {
+		if (irq_status != 0U) {
 			posix_irq_handler_im_from_sw();
 		}
 	}
 	return previous_lock;
 }
 
-u64_t hw_irq_ctrl_get_irq_status(void)
+uint64_t hw_irq_ctrl_get_irq_status(void)
 {
 	return irq_status;
 }

@@ -54,6 +54,46 @@ struct ieee802154_filter {
 /* @endcond */
 };
 
+/** IEEE802.15.4 driver configuration types. */
+enum ieee802154_config_type {
+	/** Indicates how radio driver should set Frame Pending bit in ACK
+	 *  responses for Data Requests. If enabled, radio driver should
+	 *  determine whether to set the bit or not based on the information
+	 *  provided with ``IEEE802154_CONFIG_ACK_FPB`` config. Otherwise,
+	 *  Frame Pending bit should be set to ``1``(see IEEE Std 802.15.4-2006,
+	 *  7.2.2.3.1).
+	 */
+	IEEE802154_CONFIG_AUTO_ACK_FPB,
+
+	/** Indicates whether to set ACK Frame Pending bit for specific address
+	 *  or not. Disabling the Frame Pending bit with no address provided
+	 *  (NULL pointer) should disable it for all enabled addresses.
+	 */
+	IEEE802154_CONFIG_ACK_FPB,
+};
+
+/** IEEE802.15.4 driver configuration data. */
+struct ieee802154_config {
+	/** Configuration data. */
+	union {
+		/** ``IEEE802154_CONFIG_AUTO_ACK_FPB`` */
+		struct {
+			bool enabled;
+		} auto_ack_fpb;
+
+		/** ``IEEE802154_CONFIG_ACK_FPB`` */
+		struct {
+			u8_t *addr;
+			bool extended;
+			bool enabled;
+		} ack_fpb;
+	};
+};
+
+/**
+ * @brief IEEE 802.15.4 radio interface API.
+ *
+ */
 struct ieee802154_radio_api {
 	/**
 	 * Mandatory to get in first position.
@@ -92,6 +132,11 @@ struct ieee802154_radio_api {
 	/** Stop the device */
 	int (*stop)(struct device *dev);
 
+	/** Set specific radio driver configuration. */
+	int (*configure)(struct device *dev,
+			 enum ieee802154_config_type type,
+			 const struct ieee802154_config *config);
+
 #ifdef CONFIG_NET_L2_IEEE802154_SUB_GHZ
 	/** Get the available amount of Sub-GHz channels */
 	u16_t (*get_subg_channel_count)(struct device *dev);
@@ -126,8 +171,6 @@ static inline bool ieee802154_is_ar_flag_set(struct net_buf *frag)
 	return (*frag->data & IEEE802154_AR_FLAG_SET);
 }
 
-#ifndef CONFIG_IEEE802154_RAW_MODE
-
 /**
  * @brief Radio driver ACK handling function that hw drivers should use
  *
@@ -139,16 +182,9 @@ static inline bool ieee802154_is_ar_flag_set(struct net_buf *frag)
  *
  * @return NET_OK if it was handled, NET_CONTINUE otherwise
  */
+#ifndef CONFIG_IEEE802154_RAW_MODE
 extern enum net_verdict ieee802154_radio_handle_ack(struct net_if *iface,
 						    struct net_pkt *pkt);
-
-/**
- * @brief Initialize L2 stack for a given interface
- *
- * @param iface A valid pointer on a network interface
- */
-void ieee802154_init(struct net_if *iface);
-
 #else /* CONFIG_IEEE802154_RAW_MODE */
 
 static inline enum net_verdict ieee802154_radio_handle_ack(struct net_if *iface,
@@ -156,9 +192,17 @@ static inline enum net_verdict ieee802154_radio_handle_ack(struct net_if *iface,
 {
 	return NET_CONTINUE;
 }
+#endif /* CONFIG_IEEE802154_RAW_MODE */
 
+/**
+ * @brief Initialize L2 stack for a given interface
+ *
+ * @param iface A valid pointer on a network interface
+ */
+#ifndef CONFIG_IEEE802154_RAW_MODE
+void ieee802154_init(struct net_if *iface);
+#else
 #define ieee802154_init(_iface_)
-
 #endif /* CONFIG_IEEE802154_RAW_MODE */
 
 #ifdef __cplusplus

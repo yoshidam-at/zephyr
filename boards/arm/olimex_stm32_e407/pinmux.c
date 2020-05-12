@@ -7,8 +7,8 @@
 #include <kernel.h>
 #include <device.h>
 #include <init.h>
-#include <pinmux.h>
-#include <sys_io.h>
+#include <drivers/pinmux.h>
+#include <sys/sys_io.h>
 
 #include <pinmux/stm32/pinmux_stm32.h>
 
@@ -41,8 +41,14 @@ static const struct pin_config pinconf[] = {
 	{STM32_PIN_PG14, STM32F4_PINMUX_FUNC_PG14_ETH},
 #endif /* CONFIG_ETH_STM32_HAL */
 #ifdef CONFIG_USB_DC_STM32
+#ifdef DT_USB_BASE_ADDRESS
 	{STM32_PIN_PA11, STM32F4_PINMUX_FUNC_PA11_OTG_FS_DM},
 	{STM32_PIN_PA12, STM32F4_PINMUX_FUNC_PA12_OTG_FS_DP},
+#endif /* DT_USB_BASE_ADDRESS */
+#ifdef DT_USB_HS_BASE_ADDRESS
+	{STM32_PIN_PB14, STM32F4_PINMUX_FUNC_PB14_OTG_HS_DM},
+	{STM32_PIN_PB15, STM32F4_PINMUX_FUNC_PB15_OTG_HS_DP},
+#endif /* DT_USB_HS_BASE_ADDRESS */
 #endif  /* CONFIG_USB_DC_STM32 */
 };
 

@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: Intel QMSI RTC
-version: 0.1
 
 description: >
     This is a representation of the Intel QMSI RTC nodes
@@ -18,9 +17,4 @@ properties:
       constraint: "intel,qmsi-rtc"
 
     reg:
-      type: int
-      description: mmio register space
-      generation: define
       category: required
-
-...

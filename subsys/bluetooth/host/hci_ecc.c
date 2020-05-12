@@ -10,9 +10,9 @@
  */
 
 #include <zephyr.h>
-#include <atomic.h>
-#include <misc/stack.h>
-#include <misc/byteorder.h>
+#include <sys/atomic.h>
+#include <debug/stack.h>
+#include <sys/byteorder.h>
 #include <tinycrypt/constants.h>
 #include <tinycrypt/utils.h>
 #include <tinycrypt/ecc.h>
@@ -84,7 +84,7 @@ static void send_cmd_status(u16_t opcode, u8_t status)
 
 	BT_DBG("opcode %x status %x", opcode, status);
 
-	buf = bt_buf_get_cmd_complete(K_FOREVER);
+	buf = bt_buf_get_evt(BT_HCI_EVT_CMD_STATUS, false, K_FOREVER);
 	bt_buf_set_type(buf, BT_BUF_EVT);
 
 	hdr = net_buf_add(buf, sizeof(*hdr));
@@ -92,7 +92,7 @@ static void send_cmd_status(u16_t opcode, u8_t status)
 	hdr->len = sizeof(*evt);
 
 	evt = net_buf_add(buf, sizeof(*evt));
-	evt->ncmd = 1;
+	evt->ncmd = 1U;
 	evt->opcode = sys_cpu_to_le16(opcode);
 	evt->status = status;
 
@@ -192,7 +192,7 @@ static void emulate_le_generate_dhkey(void)
 		evt->status = BT_HCI_ERR_UNSPECIFIED;
 		(void)memset(evt->dhkey, 0, sizeof(evt->dhkey));
 	} else {
-		evt->status = 0;
+		evt->status = 0U;
 		/* Convert from big-endian (provided by crypto API) to
 		 * little-endian HCI.
 		 */

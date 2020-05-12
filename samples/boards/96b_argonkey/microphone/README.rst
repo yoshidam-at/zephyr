@@ -63,14 +63,14 @@ Five seconds of acquisition at a 16KHz sampling rate yields 80,000 16-bit sample
 The microphone PDM requested clock should lead the MP34DT05 driver to select an
 oversampling/decimation factor equal to 128, resulting in a 2.048MHz bit clock.
 
-See pcm and pdm configuration in file :file:`samples/boards/96b_argonkey/microphone/src/main.c`.
+See pcm and pdm configuration in file :zephyr_file:`samples/boards/96b_argonkey/microphone/src/main.c`.
 
 .. note:: It is possible to change the AUDIO_FREQ to 32000 acquiring only 2500 ms. In this
    case the oversampling/decimation factor will be 64.
 
 At the end of the acquisition the PCM data will be printed on the terminal
 emulator in either binary or ASCII format. The output is controlled by
-following macro, off by default, in :file:`samples/boards/96b_argonkey/microphone/src/main.c`:
+following macro, off by default, in :zephyr_file:`samples/boards/96b_argonkey/microphone/src/main.c`:
 
 * :c:macro:`PCM_OUTPUT_IN_ASCII`
 
@@ -124,6 +124,6 @@ Play PCM Audio
 --------------
 
 Now that we have a binary PCM file (say sound.raw), you can use,
-for example, the audicity open source editor/player to load and play it.
+for example, the audacity open source editor/player to load and play it.
 Use the 'Import->Raw Data' menu to load the sound.raw file as
 signed 16 bit PCM, Little Endian, mono format @16KHz.

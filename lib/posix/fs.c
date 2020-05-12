@@ -10,7 +10,7 @@
 #include <posix/unistd.h>
 #include <posix/dirent.h>
 #include <string.h>
-#include <misc/fdtable.h>
+#include <sys/fdtable.h>
 
 BUILD_ASSERT_MSG(PATH_MAX >= MAX_FILE_NAME,
 		"PATH_MAX is less than MAX_FILE_NAME");
@@ -102,6 +102,7 @@ static int fs_ioctl_vmeth(void *obj, unsigned int request, va_list args)
 	switch (request) {
 	case ZFD_IOCTL_CLOSE:
 		rc = fs_close(&ptr->file);
+		posix_fs_free_obj(ptr);
 		break;
 
 	case ZFD_IOCTL_LSEEK: {
@@ -249,7 +250,7 @@ struct dirent *readdir(DIR *dirp)
 	}
 
 	rc = strlen(fdirent.name);
-	rc = (rc < PATH_MAX) ? rc : (PATH_MAX - 1);
+	rc = (rc < MAX_FILE_NAME) ? rc : (MAX_FILE_NAME - 1);
 	(void)memcpy(pdirent.d_name, fdirent.name, rc);
 
 	/* Make sure the name is NULL terminated */

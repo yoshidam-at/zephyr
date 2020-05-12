@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 zephyr_library()
 zephyr_library_link_libraries(subsys__bluetooth)
 
@@ -53,5 +55,3 @@ if(CONFIG_BT_HCI_HOST)
     endif()
   endif()
 endif()
-
-add_subdirectory_ifdef(CONFIG_BT_MESH mesh)

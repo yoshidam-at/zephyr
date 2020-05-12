@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: Sensirion Humidity Sensor SHT-3x-DIS
-version: 0.1
 
 description: >
     This binding gives a base representation of SHT3x-DIS humidity and temperature
@@ -21,6 +20,3 @@ properties:
       type: compound
       category: optional
       description: ALERT pin
-      generation: define, use-prop-name
-
-...

@@ -21,7 +21,7 @@
 #include "posix_soc_if.h"
 #include "posix_arch_internal.h"
 #include "sdl_events.h"
-#include <misc/util.h>
+#include <sys/util.h>
 
 
 static u64_t simu_time; /* The actual time as known by the HW models */
@@ -85,12 +85,12 @@ void hwm_set_sig_handler(void)
 	struct sigaction act;
 
 	act.sa_handler = hwm_signal_end_handler;
-	_SAFE_CALL(sigemptyset(&act.sa_mask));
+	PC_SAFE_CALL(sigemptyset(&act.sa_mask));
 
 	act.sa_flags = SA_RESETHAND;
 
-	_SAFE_CALL(sigaction(SIGTERM, &act, NULL));
-	_SAFE_CALL(sigaction(SIGINT, &act, NULL));
+	PC_SAFE_CALL(sigaction(SIGTERM, &act, NULL));
+	PC_SAFE_CALL(sigaction(SIGINT, &act, NULL));
 }
 
 

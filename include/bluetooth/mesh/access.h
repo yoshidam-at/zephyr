@@ -137,11 +137,14 @@ struct bt_mesh_msg_ctx {
 	/** Destination address of a received message. Not used for sending. */
 	u16_t recv_dst;
 
+	/** RSSI of received packet. Not used for sending. */
+	s8_t  recv_rssi;
+
 	/** Received TTL value. Not used for sending. */
-	u8_t  recv_ttl:7;
+	u8_t  recv_ttl;
 
 	/** Force sending reliably by using segment acknowledgement */
-	u8_t  send_rel:1;
+	bool  send_rel;
 
 	/** TTL, or BT_MESH_TTL_DEFAULT for default TTL. */
 	u8_t  send_ttl;
@@ -280,6 +283,7 @@ struct bt_mesh_model_pub {
 	u8_t  period;       /**< Publish Period. */
 	u8_t  period_div:4, /**< Divisor for the Period. */
 	      cred:1,       /**< Friendship Credentials Flag. */
+	      fast_period:1,/**< Use FastPeriodDivisor */
 	      count:3;      /**< Retransmissions left. */
 
 	u32_t period_start; /**< Start of the current period. */

@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: BMI160 Inertial measurement unit
-version: 0.1
 
 description: >
     This is a representation of the BMI160 Inertial measurement unit
@@ -20,6 +19,3 @@ properties:
     int-gpios:
       type: compound
       category: optional
-      generation: define, use-prop-name
-
-...

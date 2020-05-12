@@ -6,8 +6,8 @@
 
 #include <errno.h>
 
-#include <flash.h>
-#include <spi.h>
+#include <drivers/flash.h>
+#include <drivers/spi.h>
 #include <init.h>
 #include <string.h>
 #include "spi_flash_w25qxxdv_defs.h"
@@ -342,17 +342,19 @@ static int spi_flash_wb_erase(struct device *dev, off_t offset, size_t size)
 			break;
 		}
 
-		if (size_remaining >= W25QXXDV_BLOCK_SIZE) {
+		if ((size_remaining >= W25QXXDV_BLOCK_SIZE) &&
+			((new_offset & (W25QXXDV_BLOCK_SIZE - 1)) == 0)) {
 			ret = spi_flash_wb_erase_internal(dev, new_offset,
-							  W25QXXDV_BLOCK_SIZE);
+							W25QXXDV_BLOCK_SIZE);
 			new_offset += W25QXXDV_BLOCK_SIZE;
 			size_remaining -= W25QXXDV_BLOCK_SIZE;
 			continue;
 		}
 
-		if (size_remaining >= W25QXXDV_BLOCK32K_SIZE) {
+		if ((size_remaining >= W25QXXDV_BLOCK32K_SIZE) &&
+			((new_offset & (W25QXXDV_BLOCK32K_SIZE - 1)) == 0)) {
 			ret = spi_flash_wb_erase_internal(dev, new_offset,
-							  W25QXXDV_BLOCK32K_SIZE);
+							W25QXXDV_BLOCK32K_SIZE);
 			new_offset += W25QXXDV_BLOCK32K_SIZE;
 			size_remaining -= W25QXXDV_BLOCK32K_SIZE;
 			continue;
@@ -360,7 +362,7 @@ static int spi_flash_wb_erase(struct device *dev, off_t offset, size_t size)
 
 		if (size_remaining >= W25QXXDV_SECTOR_SIZE) {
 			ret = spi_flash_wb_erase_internal(dev, new_offset,
-							  W25QXXDV_SECTOR_SIZE);
+							W25QXXDV_SECTOR_SIZE);
 			new_offset += W25QXXDV_SECTOR_SIZE;
 			size_remaining -= W25QXXDV_SECTOR_SIZE;
 			continue;
@@ -399,23 +401,23 @@ static int spi_flash_wb_configure(struct device *dev)
 {
 	struct spi_flash_data *data = dev->driver_data;
 
-	data->spi = device_get_binding(DT_WINBOND_W25Q16_0_BUS_NAME);
+	data->spi = device_get_binding(DT_INST_0_WINBOND_W25Q16_BUS_NAME);
 	if (!data->spi) {
 		return -EINVAL;
 	}
 
-	data->spi_cfg.frequency = DT_WINBOND_W25Q16_0_SPI_MAX_FREQUENCY;
+	data->spi_cfg.frequency = DT_INST_0_WINBOND_W25Q16_SPI_MAX_FREQUENCY;
 	data->spi_cfg.operation = SPI_WORD_SET(8);
-	data->spi_cfg.slave = DT_WINBOND_W25Q16_0_BASE_ADDRESS;
+	data->spi_cfg.slave = DT_INST_0_WINBOND_W25Q16_BASE_ADDRESS;
 
 #if defined(CONFIG_SPI_FLASH_W25QXXDV_GPIO_SPI_CS)
 	data->cs_ctrl.gpio_dev = device_get_binding(
-		DT_WINBOND_W25Q16_0_CS_GPIO_CONTROLLER);
+		DT_INST_0_WINBOND_W25Q16_CS_GPIOS_CONTROLLER);
 	if (!data->cs_ctrl.gpio_dev) {
 		return -ENODEV;
 	}
 
-	data->cs_ctrl.gpio_pin = DT_WINBOND_W25Q16_0_CS_GPIO_PIN;
+	data->cs_ctrl.gpio_pin = DT_INST_0_WINBOND_W25Q16_CS_GPIOS_PIN;
 	data->cs_ctrl.delay = CONFIG_SPI_FLASH_W25QXXDV_GPIO_CS_WAIT_DELAY;
 
 	data->spi_cfg.cs = &data->cs_ctrl;

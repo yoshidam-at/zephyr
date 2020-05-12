@@ -13,13 +13,11 @@
 #ifndef __GPTP_STATE_H
 #define __GPTP_STATE_H
 
+#include "gptp_mi.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#if defined(CONFIG_NET_GPTP)
-
-#include "gptp_mi.h"
 
 /* PDelayRequest states. */
 enum gptp_pdelay_req_states {
@@ -566,8 +564,6 @@ struct gptp_port_bmca_data {
 	/** Cause a port to transmit Announce Information. */
 	bool new_info;
 };
-
-#endif /* CONFIG_NET_GPTP */
 
 #ifdef __cplusplus
 }

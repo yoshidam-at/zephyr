@@ -21,13 +21,13 @@
 
 static K_THREAD_STACK_DEFINE(tstack, STACK_SIZE);
 static K_THREAD_STACK_DEFINE(user_tstack, STACK_SIZE);
-__kernel static struct k_work_q workq;
-__kernel static struct k_work_q user_workq;
-static struct k_work work[NUM_OF_WORK];
+static struct k_work_q workq;
+static struct k_work_q user_workq;
+static ZTEST_BMEM struct k_work work[NUM_OF_WORK];
 static struct k_delayed_work new_work;
 static struct k_delayed_work delayed_work[NUM_OF_WORK], delayed_work_sleepy;
-__kernel static struct k_sem sync_sema;
-__kernel static struct k_sem dummy_sema;
+static struct k_sem sync_sema;
+static struct k_sem dummy_sema;
 static struct k_thread *main_thread;
 
 static void work_sleepy(struct k_work *w)
@@ -110,6 +110,7 @@ static void twork_resubmit(void *data)
 static void tdelayed_work_submit(void *data)
 {
 	struct k_work_q *work_q = (struct k_work_q *)data;
+	s32_t time_remaining;
 
 	for (int i = 0; i < NUM_OF_WORK; i++) {
 		/**TESTPOINT: init via k_delayed_work_init*/
@@ -129,9 +130,15 @@ static void tdelayed_work_submit(void *data)
 			zassert_true(k_delayed_work_submit(&delayed_work[i],
 							   TIMEOUT) == 0, NULL);
 		}
-		/**TESTPOINT: check remaining timeout after submit*/
-		zassert_true(k_delayed_work_remaining_get(&delayed_work[i]) >=
-			     TIMEOUT, NULL);
+
+		time_remaining = k_delayed_work_remaining_get(&delayed_work[i]);
+
+		/**TESTPOINT: check remaining timeout after submit */
+		zassert_true(
+		    time_remaining <= __ticks_to_ms(z_ms_to_ticks(TIMEOUT)
+						    + _TICK_ALIGN) &&
+		    time_remaining >= __ticks_to_ms(z_ms_to_ticks(TIMEOUT) -
+						    z_ms_to_ticks(15)), NULL);
 		/**TESTPOINT: check pending after delayed work submit*/
 		zassert_true(k_work_pending((struct k_work *)&delayed_work[i])
 			     == 0, NULL);

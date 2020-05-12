@@ -7,8 +7,8 @@
 #include <kernel.h>
 #include <device.h>
 #include <init.h>
-#include <pinmux.h>
-#include <sys_io.h>
+#include <drivers/pinmux.h>
+#include <sys/sys_io.h>
 
 #include <pinmux/stm32/pinmux_stm32.h>
 
@@ -31,7 +31,9 @@ static const struct pin_config pinconf[] = {
 	{STM32_PIN_PB9, STM32F3_PINMUX_FUNC_PB9_I2C1_SDA},
 #endif /* CONFIG_I2C_1 */
 #ifdef CONFIG_SPI_2
+#ifdef CONFIG_SPI_STM32_USE_HW_SS
 	{STM32_PIN_PB12, STM32F3_PINMUX_FUNC_PB12_SPI2_NSS},
+#endif /* CONFIG_SPI_STM32_USE_HW_SS */
 	{STM32_PIN_PB13, STM32F3_PINMUX_FUNC_PB13_SPI2_SCK},
 	{STM32_PIN_PB14, STM32F3_PINMUX_FUNC_PB14_SPI2_MISO},
 	{STM32_PIN_PB15, STM32F3_PINMUX_FUNC_PB15_SPI2_MOSI},
@@ -39,6 +41,9 @@ static const struct pin_config pinconf[] = {
 #ifdef CONFIG_PWM_STM32_2
 	{STM32_PIN_PA0, STM32F3_PINMUX_FUNC_PA0_PWM2_CH1},
 #endif /* CONFIG_PWM_STM32_2 */
+#ifdef CONFIG_ADC_1
+	{STM32_PIN_PA0, STM32F3_PINMUX_FUNC_PA0_ADC1_IN1},
+#endif /* CONFIG_ADC_1 */
 };
 
 static int pinmux_stm32_init(struct device *port)

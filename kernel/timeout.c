@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <timeout_q.h>
-#include <drivers/system_timer.h>
+#include <drivers/timer/system_timer.h>
 #include <sys_clock.h>
 #include <spinlock.h>
 #include <ksched.h>
@@ -12,7 +12,7 @@
 
 #define LOCKED(lck) for (k_spinlock_key_t __i = {},			\
 					  __key = k_spin_lock(lck);	\
-			!__i.key;					\
+			__i.key == 0;					\
 			k_spin_unlock(lck, __key), __i.key = 1)
 
 static u64_t curr_tick;
@@ -21,14 +21,22 @@ static sys_dlist_t timeout_list = SYS_DLIST_STATIC_INIT(&timeout_list);
 
 static struct k_spinlock timeout_lock;
 
-static bool can_wait_forever;
+#define MAX_WAIT (IS_ENABLED(CONFIG_SYSTEM_CLOCK_SLOPPY_IDLE) \
+		  ? K_FOREVER : INT_MAX)
 
 /* Cycles left to process in the currently-executing z_clock_announce() */
 static int announce_remaining;
 
 #if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME)
 int z_clock_hw_cycles_per_sec = CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC;
-#endif
+
+#ifdef CONFIG_USERSPACE
+Z_SYSCALL_HANDLER(z_clock_hw_cycles_per_sec_runtime_get)
+{
+	return z_impl_z_clock_hw_cycles_per_sec_runtime_get();
+}
+#endif /* CONFIG_USERSPACE */
+#endif /* CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME */
 
 static struct _timeout *first(void)
 {
@@ -60,9 +68,9 @@ static s32_t elapsed(void)
 
 static s32_t next_timeout(void)
 {
-	int maxw = can_wait_forever ? K_FOREVER : INT_MAX;
 	struct _timeout *to = first();
-	s32_t ret = to == NULL ? maxw : max(0, to->dticks - elapsed());
+	s32_t ticks_elapsed = elapsed();
+	s32_t ret = to == NULL ? MAX_WAIT : MAX(0, to->dticks - ticks_elapsed);
 
 #ifdef CONFIG_TIMESLICING
 	if (_current_cpu->slice_ticks && _current_cpu->slice_ticks < ret) {
@@ -72,11 +80,11 @@ static s32_t next_timeout(void)
 	return ret;
 }
 
-void _add_timeout(struct _timeout *to, _timeout_func_t fn, s32_t ticks)
+void z_add_timeout(struct _timeout *to, _timeout_func_t fn, s32_t ticks)
 {
 	__ASSERT(!sys_dnode_is_linked(&to->node), "");
 	to->fn = fn;
-	ticks = max(1, ticks);
+	ticks = MAX(1, ticks);
 
 	LOCKED(&timeout_lock) {
 		struct _timeout *t;
@@ -103,7 +111,7 @@ void _add_timeout(struct _timeout *to, _timeout_func_t fn, s32_t ticks)
 	}
 }
 
-int _abort_timeout(struct _timeout *to)
+int z_abort_timeout(struct _timeout *to)
 {
 	int ret = -EINVAL;
 
@@ -121,7 +129,7 @@ s32_t z_timeout_remaining(struct _timeout *timeout)
 {
 	s32_t ticks = 0;
 
-	if (_is_inactive_timeout(timeout)) {
+	if (z_is_inactive_timeout(timeout)) {
 		return 0;
 	}
 
@@ -134,10 +142,10 @@ s32_t z_timeout_remaining(struct _timeout *timeout)
 		}
 	}
 
-	return ticks;
+	return ticks - elapsed();
 }
 
-s32_t _get_next_timeout_expiry(void)
+s32_t z_get_next_timeout_expiry(void)
 {
 	s32_t ret = K_FOREVER;
 
@@ -202,19 +210,6 @@ void z_clock_announce(s32_t ticks)
 	k_spin_unlock(&timeout_lock, key);
 }
 
-int k_enable_sys_clock_always_on(void)
-{
-	int ret = !can_wait_forever;
-
-	can_wait_forever = 0;
-	return ret;
-}
-
-void k_disable_sys_clock_always_on(void)
-{
-	can_wait_forever = 1;
-}
-
 s64_t z_tick_get(void)
 {
 	u64_t t = 0U;
@@ -234,19 +229,7 @@ u32_t z_tick_get_32(void)
 #endif
 }
 
-u32_t _impl_k_uptime_get_32(void)
-{
-	return __ticks_to_ms(z_tick_get_32());
-}
-
-#ifdef CONFIG_USERSPACE
-Z_SYSCALL_HANDLER(k_uptime_get_32)
-{
-	return _impl_k_uptime_get_32();
-}
-#endif
-
-s64_t _impl_k_uptime_get(void)
+s64_t z_impl_k_uptime_get(void)
 {
 	return __ticks_to_ms(z_tick_get());
 }
@@ -257,7 +240,7 @@ Z_SYSCALL_HANDLER(k_uptime_get, ret_p)
 	u64_t *ret = (u64_t *)ret_p;
 
 	Z_OOPS(Z_SYSCALL_MEMORY_WRITE(ret, sizeof(*ret)));
-	*ret = _impl_k_uptime_get();
+	*ret = z_impl_k_uptime_get();
 	return 0;
 }
 #endif

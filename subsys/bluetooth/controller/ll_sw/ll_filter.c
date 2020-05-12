@@ -7,7 +7,7 @@
 #include <string.h>
 
 #include <zephyr.h>
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 #include <bluetooth/hci.h>
 
 #include "util/util.h"
@@ -45,6 +45,7 @@ static struct {
 } wl[WL_SIZE];
 
 static u8_t rl_enable;
+
 static struct rl_dev {
 	u8_t      taken:1;
 	u8_t      rpas_ready:1;
@@ -504,7 +505,7 @@ bool ctrl_rl_addr_resolve(u8_t id_addr_type, u8_t *id_addr, u8_t rl_idx)
 		return false;
 	}
 
-	if ((id_addr_type != 0) && ((id_addr[5] & 0xc0) == 0x40)) {
+	if ((id_addr_type != 0U) && ((id_addr[5] & 0xc0) == 0x40)) {
 		return bt_rpa_irk_matches(rl[rl_idx].local_irk,
 					  (bt_addr_t *)id_addr);
 	}
@@ -566,6 +567,11 @@ static void rpa_adv_refresh(void)
 		return;
 	}
 
+	idx = ll_rl_find(ll_adv->id_addr_type, ll_adv->id_addr, NULL);
+	if (idx >= ARRAY_SIZE(rl)) {
+		return;
+	}
+
 	radio_adv_data = radio_adv_data_get();
 	prev = (struct pdu_adv *)&radio_adv_data->data[radio_adv_data->last][0];
 	/* use the last index in double buffer, */
@@ -589,8 +595,6 @@ static void rpa_adv_refresh(void)
 		pdu->chan_sel = 0U;
 	}
 
-	idx = ll_rl_find(ll_adv->id_addr_type, ll_adv->id_addr, NULL);
-	LL_ASSERT(idx < ARRAY_SIZE(rl));
 	ll_rl_pdu_adv_update(idx, pdu);
 
 	memcpy(&pdu->adv_ind.data[0], &prev->adv_ind.data[0],
@@ -684,20 +688,12 @@ static void rpa_timeout(struct k_work *work)
 
 static void rpa_refresh_start(void)
 {
-	if (!rl_enable) {
-		return;
-	}
-
 	BT_DBG("");
 	k_delayed_work_submit(&rpa_work, rpa_timeout_ms);
 }
 
 static void rpa_refresh_stop(void)
 {
-	if (!rl_enable) {
-		return;
-	}
-
 	k_delayed_work_cancel(&rpa_work);
 }
 
@@ -892,7 +888,7 @@ u8_t ll_rl_enable(u8_t enable)
 
 void ll_rl_timeout_set(u16_t timeout)
 {
-	rpa_timeout_ms = timeout * 1000;
+	rpa_timeout_ms = timeout * 1000U;
 }
 
 u8_t ll_priv_mode_set(bt_addr_le_t *id_addr, u8_t mode)

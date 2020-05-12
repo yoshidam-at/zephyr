@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sensor.h>
+#include <drivers/sensor.h>
 
 #include <nrfx_qdec.h>
 #include <hal/nrf_gpio.h>
@@ -195,8 +195,8 @@ static int qdec_nrfx_init(struct device *dev)
 
 	LOG_DBG("");
 
-	IRQ_CONNECT(DT_NORDIC_NRF_QDEC_QDEC_0_IRQ,
-		    DT_NORDIC_NRF_QDEC_QDEC_0_IRQ_PRIORITY,
+	IRQ_CONNECT(DT_NORDIC_NRF_QDEC_QDEC_0_IRQ_0,
+		    DT_NORDIC_NRF_QDEC_QDEC_0_IRQ_0_PRIORITY,
 		    nrfx_isr, nrfx_qdec_irq_handler, 0);
 
 	nerr = nrfx_qdec_init(&config, qdec_nrfx_event_handler);
@@ -271,9 +271,8 @@ static int qdec_nrfx_pm_set_state(struct qdec_nrfx_data *data,
 	return 0;
 }
 
-static int qdec_nrfx_pm_control(struct device *dev,
-				u32_t          ctrl_command,
-				void          *context)
+static int qdec_nrfx_pm_control(struct device *dev, u32_t ctrl_command,
+				void *context, device_pm_cb cb, void *arg)
 {
 	struct qdec_nrfx_data *data = &qdec_nrfx_data;
 	int err;
@@ -292,6 +291,10 @@ static int qdec_nrfx_pm_control(struct device *dev,
 	default:
 		err = -ENOTSUP;
 		break;
+	}
+
+	if (cb) {
+		cb(dev, err, context, arg);
 	}
 
 	return err;

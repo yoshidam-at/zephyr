@@ -1,6 +1,12 @@
 :orphan:
 
 .. _west-apis:
+.. _west-apis-west:
+.. _west-apis-commands:
+.. _west-apis-configuration:
+.. _west-apis-log:
+.. _west-apis-manifest:
+.. _west-apis-util:
 
 West APIs
 #########

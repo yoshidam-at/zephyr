@@ -11,12 +11,12 @@ that will send IPv4 or IPv6 packets, wait for the data to be sent back,
 and then verify it matches the data that was sent.
 
 The source code for this sample application can be found at:
-:file:`samples/net/sockets/echo_client`.
+:zephyr_file:`samples/net/sockets/echo_client`.
 
 Requirements
 ************
 
-- :ref:`networking_with_qemu`
+- :ref:`networking_with_host`
 
 Building and Running
 ********************
@@ -83,12 +83,50 @@ Enable TLS support in the sample by building the project with the
    :compact:
 
 An alternative way is to specify ``-DOVERLAY_CONFIG=overlay-tls.conf`` when
-running cmake.
+running ``west build`` or ``cmake``.
 
 The certificate and private key used by the sample can be found in the sample's
 ``src`` directory. The default certificates used by Socket Echo Client and
 :ref:`sockets-echo-server-sample` enable establishing a secure connection
 between the samples.
+
+SOCKS5 proxy support
+====================
+
+It is also possible to connect to the echo-server through a SOCKS5 proxy.
+To enable it, use ``-DOVERLAY_CONFIG=overlay-socks5.conf`` when running ``west
+build`` or  ``cmake``.
+
+By default, to make the testing easier, the proxy is expected to run on the
+same host as the echo-server in Linux host.
+
+To start a proxy server, for example a builtin SOCKS server support in ssh
+can be used (-D option). Use the following command to run it on your host
+with the default port:
+
+For IPv4 proxy server:
+
+.. code-block: console
+
+        $ ssh -N -D 0.0.0.0:1080 localhost
+
+For IPv6 proxy server:
+
+.. code-block: console
+
+        $ ssh -N -D [::]:1080 localhost
+
+Run both commands if you are testing IPv4 and IPv6.
+
+To connect to a proxy server that is not running under the same IP as the
+echo-server or uses a different port number, modify the following values
+in echo_client/src/tcp.c.
+
+.. code-block:: c
+
+        #define SOCKS5_PROXY_V4_ADDR IPV4_ADDR
+        #define SOCKS5_PROXY_V6_ADDR IPV6_ADDR
+        #define SOCKS5_PROXY_PORT    1080
 
 Running echo-server in Linux Host
 =================================
@@ -110,11 +148,13 @@ Run echo-client application in QEMU:
    :zephyr-app: samples/net/sockets/echo_client
    :host-os: unix
    :board: qemu_x86
+   :conf: "prj.conf overlay-linux.conf"
    :goals: run
    :compact:
 
 Note that echo-server must be running in the Linux host terminal window
 before you start the echo-client application in QEMU.
+Exit QEMU by pressing :kbd:`CTRL+A` :kbd:`x`.
 
 You can verify TLS communication with a Linux host as well. See
 https://github.com/zephyrproject-rtos/net-tools documentation for information

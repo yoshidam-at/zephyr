@@ -4,6 +4,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+# NOTE: This file is part of the old device tree scripts, which will be removed
+# later. They are kept to generate some legacy #defines via the
+# --deprecated-only flag.
+#
+# The new scripts are gen_defines.py, edtlib.py, and dtlib.py.
+
 from extract.globals import *
 from extract.directive import DTDirective
 
@@ -11,63 +17,87 @@ from extract.directive import DTDirective
 # @brief Manage directives in a default way.
 #
 class DTDefault(DTDirective):
+    def _extract_enum(self, node_path, prop, prop_values, label):
+        cell_yaml = get_binding(node_path)['properties'][prop]
+        if 'enum' in cell_yaml:
+            if prop_values in cell_yaml['enum']:
+                if isinstance(cell_yaml['enum'], list):
+                   value = cell_yaml['enum'].index(prop_values)
+                if isinstance(cell_yaml['enum'], dict):
+                   value = cell_yaml['enum'][prop_values]
+                label = label + "_ENUM"
+                return {label:value}
+            else:
+                print("ERROR")
+        return {}
 
-    def __init__(self):
-        pass
 
     ##
     # @brief Extract directives in a default way
     #
-    # @param node_address Address of node owning the clockxxx definition.
+    # @param node_path Path to node owning the clockxxx definition.
     # @param prop property name
     # @param prop type (string, boolean, etc)
     # @param def_label Define label string of node owning the directive.
     #
-    def extract(self, node_address, prop, prop_type, def_label):
+    def extract(self, node_path, prop, prop_type, def_label):
         prop_def = {}
         prop_alias = {}
 
         if prop_type == 'boolean':
-            if prop in reduced[node_address]['props'].keys():
+            if prop in reduced[node_path]['props']:
                 prop_values = 1
             else:
                 prop_values = 0
         else:
-            prop_values = reduced[node_address]['props'][prop]
+            prop_values = reduced[node_path]['props'][prop]
 
-        if isinstance(prop_values, list):
+        if prop_type == "string-array" or prop_type == "array" or prop_type == "uint8-array":
+            if type(prop_values) is not list: prop_values = [ prop_values, ]
+
+        if prop_type == "uint8-array":
+            prop_name = str_to_label(prop)
+            label = def_label + '_' + prop_name
+            prop_value = ''.join(['{ ',
+                                  ', '.join(["0x%02x" % b for b in prop_values]),
+                                  ' }'])
+            prop_def[label] = prop_value
+            add_compat_alias(node_path, prop_name, label, prop_alias)
+        elif isinstance(prop_values, list):
             for i, prop_value in enumerate(prop_values):
-                prop_name = convert_string_to_label(prop)
+                prop_name = str_to_label(prop)
                 label = def_label + '_' + prop_name
                 if isinstance(prop_value, str):
                     prop_value = "\"" + prop_value + "\""
                 prop_def[label + '_' + str(i)] = prop_value
-                add_compat_alias(node_address,
+                add_compat_alias(node_path,
                         prop_name + '_' + str(i),
                         label + '_' + str(i),
                         prop_alias)
         else:
-            prop_name = convert_string_to_label(prop)
+            prop_name = str_to_label(prop)
             label = def_label + '_' + prop_name
 
             if prop_values == 'parent-label':
-                prop_values = find_parent_prop(node_address, 'label')
+                prop_values = find_parent_prop(node_path, 'label')
 
+            prop_def = self._extract_enum(node_path, prop, prop_values, label)
+            if prop_def:
+                add_compat_alias(node_path, prop_name + "_ENUM" , label + "_ENUM", prop_alias)
             if isinstance(prop_values, str):
                 prop_values = "\"" + prop_values + "\""
             prop_def[label] = prop_values
-            add_compat_alias(node_address, prop_name, label, prop_alias)
+            add_compat_alias(node_path, prop_name, label, prop_alias)
 
             # generate defs for node aliases
-            if node_address in aliases:
+            if node_path in aliases:
                 add_prop_aliases(
-                    node_address,
-                    lambda alias:
-                        convert_string_to_label(alias) + '_' + prop_name,
+                    node_path,
+                    lambda alias: str_to_label(alias) + '_' + prop_name,
                     label,
                     prop_alias)
 
-        insert_defs(node_address, prop_def, prop_alias)
+        insert_defs(node_path, prop_def, prop_alias)
 
 ##
 # @brief Management information for directives handled by default.

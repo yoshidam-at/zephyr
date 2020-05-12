@@ -31,18 +31,18 @@ def main():
     print("Parsing Kconfig tree in " + args.kconfig_root)
     kconf = Kconfig(args.kconfig_root, warn_to_stderr=False)
 
+    # Warn for assignments to undefined symbols
+    kconf.warn_assign_undef = True
+
     # prj.conf may override settings from the board configuration, so disable
     # warnings about symbols being assigned more than once
-    kconf.disable_override_warnings()
-    kconf.disable_redun_warnings()
-    # Warn for assignments to undefined symbols
-    kconf.enable_undef_warnings()
+    kconf.warn_assign_override = False
+    kconf.warn_assign_redun = False
 
-    for i, config in enumerate(args.conf_fragments):
-        print(("Loading {} as base" if i == 0 else "Merging {}")
-              .format(config))
+    print(kconf.load_config(args.conf_fragments[0]))
+    for config in args.conf_fragments[1:]:
         # replace=False creates a merged configuration
-        kconf.load_config(config, replace=False)
+        print(kconf.load_config(config, replace=False))
 
     # Print warnings for symbols whose actual value doesn't match the assigned
     # value
@@ -71,7 +71,7 @@ def main():
     for warning in kconf.warnings:
         print("\n" + warning, file=sys.stderr)
 
-    # Turn all warnings except for explicity whitelisted ones into errors. In
+    # Turn all warnings except for explicitly whitelisted ones into errors. In
     # particular, this will turn assignments to undefined Kconfig variables
     # into errors.
     #
@@ -89,9 +89,11 @@ def main():
                 100) + "\n")
 
     # Write the merged configuration and the C header
-    kconf.write_config(args.dotconfig)
-    print("Configuration written to '{}'".format(args.dotconfig))
+    print(kconf.write_config(args.dotconfig))
     kconf.write_autoconf(args.autoconf)
+
+    # Write the list of processed Kconfig sources to a file
+    write_kconfig_filenames(kconf.kconfig_filenames, kconf.srctree, args.sources)
 
 
 # Message printed when a promptless symbol is assigned (and doesn't get the
@@ -146,7 +148,7 @@ def verify_assigned_choice_value(choice):
     #
     # We check choice symbols separately to avoid warnings when two different
     # choice symbols within the same choice are set to y. This might happen if
-    # a choice selection from a board defconfig is overriden in a prj.conf, for
+    # a choice selection from a board defconfig is overridden in a prj.conf, for
     # example. The last choice symbol set to y becomes the selection (and all
     # other choice symbols get the value n).
     #
@@ -183,6 +185,29 @@ def promptless(sym):
     return not any(node.prompt for node in sym.nodes)
 
 
+def write_kconfig_filenames(paths, root_path, output_file_path):
+    # 'paths' is a list of paths. The list has duplicates and the
+    # paths are either absolute or relative to 'root_path'.
+
+    # We need to write this list, in a format that CMake can easily
+    # parse, to the output file at 'output_file_path'.
+
+    # The written list has sorted real (absolute) paths, and it does not have
+    # duplicates. The list is sorted to be deterministic. It is realpath()'d
+    # to ensure that different representations of the same path does not end
+    # up with two entries, as that could cause the build system to fail.
+
+    paths_uniq = sorted({os.path.realpath(os.path.join(root_path, path)) for path in paths})
+
+    with open(output_file_path, 'w') as out:
+        for path in paths_uniq:
+            # Assert that the file exists, since it was sourced, it
+            # must surely also exist.
+            assert os.path.isfile(path), "Internal error: '{}' does not exist".format(path)
+
+            out.write("{}\n".format(path))
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -192,6 +217,7 @@ def parse_args():
     parser.add_argument("kconfig_root")
     parser.add_argument("dotconfig")
     parser.add_argument("autoconf")
+    parser.add_argument("sources")
     parser.add_argument("conf_fragments", metavar='conf', type=str, nargs='+')
 
     return parser.parse_args()

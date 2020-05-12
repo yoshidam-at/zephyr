@@ -11,6 +11,7 @@
 #include <arch/cpu.h>
 #include <syscall.h>
 #include <swap_macros.h>
+#include <v2/irq.h>
 
 .macro clear_scratch_regs
 	mov r1, 0
@@ -44,20 +45,21 @@
 	mov r13, 0
 .endm
 
-GTEXT(_arc_userspace_enter)
+GTEXT(z_arc_userspace_enter)
 GTEXT(_arc_do_syscall)
-GTEXT(_user_thread_entry_wrapper)
+GTEXT(z_user_thread_entry_wrapper)
 GTEXT(z_arch_user_string_nlen)
 GTEXT(z_arch_user_string_nlen_fault_start)
 GTEXT(z_arch_user_string_nlen_fault_end)
 GTEXT(z_arch_user_string_nlen_fixup)
 /*
- * @brief Wrapper for _thread_entry in the case of user thread
+ * @brief Wrapper for z_thread_entry in the case of user thread
  * The init parameters are in privileged stack
  *
  * @return N/A
  */
-SECTION_FUNC(TEXT, _user_thread_entry_wrapper)
+SECTION_FUNC(TEXT, z_user_thread_entry_wrapper)
+	seti _ARC_V2_INIT_IRQ_LOCK_KEY
 	pop_s r3
 	pop_s r2
 	pop_s r1
@@ -74,7 +76,7 @@ SECTION_FUNC(TEXT, _user_thread_entry_wrapper)
 
 /*
  * when CONFIG_INIT_STACKS is enable, stack will be initialized
- * in _new_thread_init.
+ * in z_new_thread_init.
  */
 	j _arc_go_to_user_space
 
@@ -87,18 +89,16 @@ SECTION_FUNC(TEXT, _user_thread_entry_wrapper)
  * not transition back later, unless they are doing system calls.
  *
  */
-SECTION_FUNC(TEXT, _arc_userspace_enter)
+SECTION_FUNC(TEXT, z_arc_userspace_enter)
 	/*
 	 * In ARCv2, the U bit can only be set through exception return
 	 */
 #ifdef CONFIG_ARC_STACK_CHECKING
 	/* disable stack checking as the stack should be initialized */
-#ifdef CONFIG_ARC_HAS_SECURE
+#ifdef CONFIG_ARC_SECURE_FIRMWARE
 	lr blink, [_ARC_V2_SEC_STAT]
 	bclr blink, blink, _ARC_V2_SEC_STAT_SSC_BIT
-	/* sflag blink */
-	/* sflag instruction is not supported in current ARC GNU */
-	.long 0x07ff302f
+	sflag blink
 #else
 	lr blink, [_ARC_V2_STATUS32]
 	bclr blink, blink, _ARC_V2_STATUS32_SC_BIT
@@ -134,12 +134,10 @@ _clear_user_stack:
 
 	_load_stack_check_regs
 
-#ifdef CONFIG_ARC_HAS_SECURE
+#ifdef CONFIG_ARC_SECURE_FIRMWARE
 	lr r0, [_ARC_V2_SEC_STAT]
 	bset r0, r0, _ARC_V2_SEC_STAT_SSC_BIT
-	/* sflag r0 */
-	/* sflag instruction is not supported in current ARC GNU */
-	.long 0x003f302f
+	sflag r0
 #else
 	lr r0, [_ARC_V2_STATUS32]
 	bset r0, r0, _ARC_V2_STATUS32_SC_BIT
@@ -151,24 +149,26 @@ _arc_go_to_user_space:
 	lr r0, [_ARC_V2_STATUS32]
 	bset r0, r0, _ARC_V2_STATUS32_U_BIT
 
-	mov r1, _thread_entry_wrapper
-
-	/* fake exception return */
-	kflag _ARC_V2_STATUS32_AE
+	mov r1, z_thread_entry_wrapper1
 
 	sr r0, [_ARC_V2_ERSTATUS]
 	sr r1, [_ARC_V2_ERET]
 
-#ifdef CONFIG_ARC_HAS_SECURE
+	/* fake exception return */
+	lr r0, [_ARC_V2_STATUS32]
+	bclr r0, r0, _ARC_V2_STATUS32_AE_BIT
+	kflag r0
+
+/* when exception returns from kernel to user, sp and _ARC_V2_USER_SP
+ * /_ARC_V2_SECU_SP will be switched
+ */
+#if defined(CONFIG_ARC_HAS_SECURE) && defined(CONFIG_ARC_SECURE_FIRMWARE)
 	lr r0, [_ARC_V2_SEC_STAT]
 	/* the mode returns from exception return is secure mode */
 	bset r0, r0, 31
 	sr r0, [_ARC_V2_ERSEC_STAT]
 	sr r5, [_ARC_V2_SEC_U_SP]
 #else
-	/* when exception returns from kernel to user, sp and _ARC_V2_USER_SP
-	 * will be switched
-	 */
 	sr r5, [_ARC_V2_USER_SP]
 #endif
 	mov sp, blink
@@ -223,14 +223,16 @@ SECTION_FUNC(TEXT, _arc_do_syscall)
 	pop_s blink
 
 	/* through fake exception return, go back to the caller */
-	kflag _ARC_V2_STATUS32_AE
+	lr r6, [_ARC_V2_STATUS32]
+	bclr r6, r6, _ARC_V2_STATUS32_AE_BIT
+	kflag r6
 
 	/* the status and return address are saved in trap_s handler */
 	pop r6
 	sr r6, [_ARC_V2_ERSTATUS]
 	pop r6
 	sr r6, [_ARC_V2_ERET]
-#ifdef CONFIG_ARC_HAS_SECURE
+#ifdef CONFIG_ARC_SECURE_FIRMWARE
 	pop r6
 	sr r6, [_ARC_V2_ERSEC_STAT]
 #endif

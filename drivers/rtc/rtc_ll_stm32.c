@@ -11,11 +11,11 @@
 #include <time.h>
 
 #include <clock_control/stm32_clock_control.h>
-#include <clock_control.h>
-#include <misc/util.h>
+#include <drivers/clock_control.h>
+#include <sys/util.h>
 #include <kernel.h>
 #include <soc.h>
-#include <rtc.h>
+#include <drivers/rtc.h>
 
 #if defined(CONFIG_SOC_SERIES_STM32L4X)
 #define EXTI_LINE	LL_EXTI_LINE_18
@@ -69,7 +69,8 @@ static u32_t rtc_stm32_read(struct device *dev)
 	/* Convert calendar datetime to UNIX timestamp */
 	now.tm_year = 100 + __LL_RTC_CONVERT_BCD2BIN(
 					__LL_RTC_GET_YEAR(rtc_date));
-	now.tm_mon = __LL_RTC_CONVERT_BCD2BIN(__LL_RTC_GET_MONTH(rtc_date));
+	/* tm_mon starts from 0 */
+	now.tm_mon = __LL_RTC_CONVERT_BCD2BIN(__LL_RTC_GET_MONTH(rtc_date)) - 1;
 	now.tm_mday = __LL_RTC_CONVERT_BCD2BIN(__LL_RTC_GET_DAY(rtc_date));
 
 	now.tm_hour = __LL_RTC_CONVERT_BCD2BIN(__LL_RTC_GET_HOUR(rtc_time));
@@ -147,7 +148,8 @@ static int rtc_stm32_set_config(struct device *dev, struct rtc_config *cfg)
 	gmtime_r(&init_ts, &init_tm);
 
 	rtc_date.Year = init_tm.tm_year % 100;
-	rtc_date.Month = init_tm.tm_mon;
+	/* tm_mon starts from 0 */
+	rtc_date.Month = init_tm.tm_mon + 1;
 	rtc_date.Day = init_tm.tm_mday;
 	rtc_date.WeekDay = init_tm.tm_wday + 1;
 
@@ -226,8 +228,9 @@ static int rtc_stm32_init(struct device *dev)
 #if defined(CONFIG_RTC_STM32_CLOCK_LSI)
 
 	LL_RCC_LSI_Enable();
-	while (LL_RCC_LSI_IsReady() != 1)
-		;
+	while (LL_RCC_LSI_IsReady() != 1) {
+	}
+
 	LL_RCC_SetRTCClockSource(LL_RCC_RTC_CLKSOURCE_LSI);
 
 #else /* CONFIG_RTC_STM32_CLOCK_LSE */
@@ -235,9 +238,9 @@ static int rtc_stm32_init(struct device *dev)
 	LL_RCC_LSE_SetDriveCapability(CONFIG_RTC_STM32_LSE_DRIVE_STRENGTH);
 	LL_RCC_LSE_Enable();
 
-	/* Wait untill LSE is ready */
-	while (LL_RCC_LSE_IsReady() != 1)
-		;
+	/* Wait until LSE is ready */
+	while (LL_RCC_LSE_IsReady() != 1) {
+	}
 
 	LL_RCC_SetRTCClockSource(LL_RCC_RTC_CLKSOURCE_LSE);
 
@@ -305,7 +308,7 @@ DEVICE_AND_API_INIT(rtc_stm32, CONFIG_RTC_0_NAME, &rtc_stm32_init,
 
 static void rtc_stm32_irq_config(struct device *dev)
 {
-	IRQ_CONNECT(DT_RTC_0_IRQ, CONFIG_RTC_0_IRQ_PRI,
+	IRQ_CONNECT(DT_RTC_0_IRQ, DT_RTC_0_IRQ_PRI,
 		    rtc_stm32_isr, DEVICE_GET(rtc_stm32), 0);
 	irq_enable(DT_RTC_0_IRQ);
 }

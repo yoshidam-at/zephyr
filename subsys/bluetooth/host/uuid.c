@@ -8,8 +8,8 @@
 
 #include <string.h>
 #include <errno.h>
-#include <misc/byteorder.h>
-#include <misc/printk.h>
+#include <sys/byteorder.h>
+#include <sys/printk.h>
 
 #include <bluetooth/uuid.h>
 
@@ -64,8 +64,9 @@ static int uuid128_cmp(const struct bt_uuid *u1, const struct bt_uuid *u2)
 int bt_uuid_cmp(const struct bt_uuid *u1, const struct bt_uuid *u2)
 {
 	/* Convert to 128 bit if types don't match */
-	if (u1->type != u2->type)
+	if (u1->type != u2->type) {
 		return uuid128_cmp(u1, u2);
+	}
 
 	switch (u1->type) {
 	case BT_UUID_TYPE_16:
@@ -77,6 +78,28 @@ int bt_uuid_cmp(const struct bt_uuid *u1, const struct bt_uuid *u2)
 	}
 
 	return -EINVAL;
+}
+
+bool bt_uuid_create(struct bt_uuid *uuid, const u8_t *data, u8_t data_len)
+{
+	/* Copy UUID from packet data/internal variable to internal bt_uuid */
+	switch (data_len) {
+	case 2:
+		uuid->type = BT_UUID_TYPE_16;
+		BT_UUID_16(uuid)->val = sys_get_le16(data);
+		break;
+	case 4:
+		uuid->type = BT_UUID_TYPE_32;
+		BT_UUID_32(uuid)->val = sys_get_le32(data);
+		break;
+	case 16:
+		uuid->type = BT_UUID_TYPE_128;
+		memcpy(&BT_UUID_128(uuid)->val, data, 16);
+		break;
+	default:
+		return false;
+	}
+	return true;
 }
 
 #if defined(CONFIG_BT_DEBUG)
@@ -109,7 +132,7 @@ void bt_uuid_to_str(const struct bt_uuid *uuid, char *str, size_t len)
 	}
 }
 
-const char *bt_uuid_str(const struct bt_uuid *uuid)
+const char *bt_uuid_str_real(const struct bt_uuid *uuid)
 {
 	static char str[37];
 

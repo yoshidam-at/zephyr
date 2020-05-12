@@ -15,7 +15,7 @@
 #include <stddef.h>
 #include <zephyr/types.h>
 #include <zephyr.h>
-#include <misc/util.h>
+#include <sys/util.h>
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/hci.h>
 
@@ -26,7 +26,7 @@ const char *bt_hex_real(const void *buf, size_t len)
 	const u8_t *b = buf;
 	int i;
 
-	len = min(len, (sizeof(str) - 1) / 2);
+	len = MIN(len, (sizeof(str) - 1) / 2);
 
 	for (i = 0; i < len; i++) {
 		str[i * 2]     = hex[b[i] >> 4];

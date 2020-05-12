@@ -1,4 +1,5 @@
-add_subdirectory_ifdef(CONFIG_APP_SHARED_MEM       app_memory)
+# SPDX-License-Identifier: Apache-2.0
+
 add_subdirectory(debug)
 add_subdirectory(logging)
 add_subdirectory_ifdef(CONFIG_BT                   bluetooth)
@@ -17,3 +18,5 @@ add_subdirectory_ifdef(CONFIG_SETTINGS             settings)
 add_subdirectory(fb)
 add_subdirectory(power)
 add_subdirectory(stats)
+add_subdirectory(testsuite)
+add_subdirectory_if_kconfig(jwt)

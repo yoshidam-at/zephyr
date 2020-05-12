@@ -7,8 +7,8 @@
 
 #include <string.h>
 
-#include <misc/dlist.h>
-#include <misc/mempool_base.h>
+#include <sys/dlist.h>
+#include <sys/mempool_base.h>
 
 #include "util/mem.h"
 #include "hal/ecb.h"
@@ -193,7 +193,7 @@ u32_t ecb_ut(void)
 		__WFE();
 	} while (!context.done);
 
-	if (context.status != 0) {
+	if (context.status != 0U) {
 		return context.status;
 	}
 

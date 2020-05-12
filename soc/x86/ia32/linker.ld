@@ -40,8 +40,7 @@ MEMORY
      */
 
     IDT_LIST        : ORIGIN = 0xFFFF1000, LENGTH = 2K
-    MMU_LIST	    : ORIGIN = 0xFFFF2000, LENGTH = 1K
     }
 
-#include <arch/x86/linker.ld>
+#include <arch/x86/ia32/linker.ld>
 

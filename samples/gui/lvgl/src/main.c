@@ -5,7 +5,7 @@
  */
 
 #include <device.h>
-#include <display.h>
+#include <drivers/display.h>
 #include <lvgl.h>
 #include <stdio.h>
 #include <string.h>
@@ -17,13 +17,13 @@ LOG_MODULE_REGISTER(app);
 
 void main(void)
 {
-	u32_t count = 0;
+	u32_t count = 0U;
 	char count_str[11] = {0};
 	struct device *display_dev;
 	lv_obj_t *hello_world_label;
 	lv_obj_t *count_label;
 
-	display_dev = device_get_binding("DISPLAY");
+	display_dev = device_get_binding(CONFIG_LVGL_DISPLAY_DEV_NAME);
 
 	if (display_dev == NULL) {
 		LOG_ERR("device not found.  Aborting test.");
@@ -40,8 +40,8 @@ void main(void)
 	display_blanking_off(display_dev);
 
 	while (1) {
-		if ((count % 100) == 0) {
-			sprintf(count_str, "%d", count/100);
+		if ((count % 100) == 0U) {
+			sprintf(count_str, "%d", count/100U);
 			lv_label_set_text(count_label, count_str);
 		}
 		lv_task_handler();

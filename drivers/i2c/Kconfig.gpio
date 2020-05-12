@@ -10,6 +10,18 @@ config I2C_GPIO
 	help
 	  Enable software driven (bit banging) I2C support using GPIO pins
 
+config I2C_GPIO_SDA_NO_OPENDRAIN
+	bool "GPIO Bit Bang I2C pin for SDA is open drain"
+	depends on I2C_GPIO
+	help
+	  If enable, SDA is not configured as open drain.
+
+config I2C_GPIO_SCL_NO_OPENDRAIN
+	bool "GPIO Bit Bang I2C pin for SCL is open drain"
+	depends on I2C_GPIO
+	help
+	  If enable, SCL is not configured as open drain.
+
 # ---------- Port 0 ----------
 
 config I2C_GPIO_0

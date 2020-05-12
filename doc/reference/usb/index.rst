@@ -23,6 +23,22 @@ The USB maintainer, if one is assigned, or otherwise the Zephyr Technical
 Steering Committee, may allocate other USB Product IDs based on well-motivated
 and documented requests.
 
+Each USB sample has its own unique Product ID.
+When adding a new sample, add a new entry in :file:`samples/subsys/usb/usb_pid.Kconfig`
+and a Kconfig file inside your sample subdirectory.
+The following Product IDs are currently used:
+
+* :option:`CONFIG_USB_PID_CDC_ACM_SAMPLE`
+* :option:`CONFIG_USB_PID_CDC_ACM_COMPOSITE_SAMPLE`
+* :option:`CONFIG_USB_PID_HID_CDC_SAMPLE`
+* :option:`CONFIG_USB_PID_CONSOLE_SAMPLE`
+* :option:`CONFIG_USB_PID_DFU_SAMPLE`
+* :option:`CONFIG_USB_PID_HID_SAMPLE`
+* :option:`CONFIG_USB_PID_HID_MOUSE_SAMPLE`
+* :option:`CONFIG_USB_PID_MASS_SAMPLE`
+* :option:`CONFIG_USB_PID_TESTUSB_SAMPLE`
+* :option:`CONFIG_USB_PID_WEBUSB_SAMPLE`
+
 USB device controller drivers
 *****************************
 
@@ -79,22 +95,7 @@ USB Device configuration structure:
    :end-before: usb.rst device config data end
    :linenos:
 
-For the Composite USB Device configuration is done by composite layer,
-otherwise:
-
-.. literalinclude:: ../../../subsys/usb/class/loopback.c
-   :language: c
-   :start-after: usb.rst configure USB controller start
-   :end-before: usb.rst configure USB controller end
-   :linenos:
-
-To enable the USB device for host/device connection:
-
-.. literalinclude:: ../../../subsys/usb/class/loopback.c
-   :language: c
-   :start-after: usb.rst enable USB controller start
-   :end-before:  usb.rst enable USB controller end
-   :linenos:
+Configuration of USB Device is done in the stack layer.
 
 The vendor device requests are forwarded by the USB stack core driver to the
 class driver through the registered class handler.
@@ -122,7 +123,7 @@ Run built sample with:
 
 .. code-block:: console
 
-   $ make run
+   make -Cbuild run
 
 In a terminal window, run the following command to list USB devices:
 

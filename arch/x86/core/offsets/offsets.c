@@ -27,17 +27,20 @@
 /* list of headers that define whose structure offsets will be generated */
 
 #include <kernel_structs.h>
-#include <swapstk.h>
-#include <mmustructs.h>
+#include <ia32/mmustructs.h>
+#include <arch/x86/multiboot.h>
 
 #include <kernel_offsets.h>
 
-#if defined(CONFIG_FP_SHARING)
+#if defined(CONFIG_LAZY_FP_SHARING)
 GEN_OFFSET_SYM(_thread_arch_t, excNestCount);
 #endif
 
-GEN_OFFSET_SYM(_thread_arch_t, coopFloatReg);
 GEN_OFFSET_SYM(_thread_arch_t, preempFloatReg);
+
+#ifdef CONFIG_USERSPACE
+GEN_ABSOLUTE_SYM(Z_X86_PDPT_SIZE, sizeof(struct x86_mmu_pdpt));
+#endif
 
 /**
  * size of the struct k_thread structure sans save area for floating
@@ -45,37 +48,24 @@ GEN_OFFSET_SYM(_thread_arch_t, preempFloatReg);
  */
 
 GEN_ABSOLUTE_SYM(_K_THREAD_NO_FLOAT_SIZEOF,
-		 sizeof(struct k_thread) - sizeof(tCoopFloatReg) -
-			 sizeof(tPreempFloatReg));
+		 sizeof(struct k_thread) - sizeof(tPreempFloatReg));
 
 GEN_OFFSET_SYM(_callee_saved_t, esp);
 
-GEN_OFFSET_SYM(tSwapStk, eax);
-GEN_OFFSET_SYM(tSwapStk, ebp);
-GEN_OFFSET_SYM(tSwapStk, ebx);
-GEN_OFFSET_SYM(tSwapStk, esi);
-GEN_OFFSET_SYM(tSwapStk, edi);
-GEN_OFFSET_SYM(tSwapStk, retAddr);
-GEN_OFFSET_SYM(tSwapStk, param);
+/* z_arch_esf_t structure member offsets */
 
-/* size of the entire tSwapStk structure */
-
-GEN_ABSOLUTE_SYM(__tSwapStk_SIZEOF, sizeof(tSwapStk));
-
-/* NANO_ESF structure member offsets */
-
-GEN_OFFSET_SYM(NANO_ESF, esp);
-GEN_OFFSET_SYM(NANO_ESF, ebp);
-GEN_OFFSET_SYM(NANO_ESF, ebx);
-GEN_OFFSET_SYM(NANO_ESF, esi);
-GEN_OFFSET_SYM(NANO_ESF, edi);
-GEN_OFFSET_SYM(NANO_ESF, edx);
-GEN_OFFSET_SYM(NANO_ESF, ecx);
-GEN_OFFSET_SYM(NANO_ESF, eax);
-GEN_OFFSET_SYM(NANO_ESF, errorCode);
-GEN_OFFSET_SYM(NANO_ESF, eip);
-GEN_OFFSET_SYM(NANO_ESF, cs);
-GEN_OFFSET_SYM(NANO_ESF, eflags);
+GEN_OFFSET_SYM(z_arch_esf_t, esp);
+GEN_OFFSET_SYM(z_arch_esf_t, ebp);
+GEN_OFFSET_SYM(z_arch_esf_t, ebx);
+GEN_OFFSET_SYM(z_arch_esf_t, esi);
+GEN_OFFSET_SYM(z_arch_esf_t, edi);
+GEN_OFFSET_SYM(z_arch_esf_t, edx);
+GEN_OFFSET_SYM(z_arch_esf_t, ecx);
+GEN_OFFSET_SYM(z_arch_esf_t, eax);
+GEN_OFFSET_SYM(z_arch_esf_t, errorCode);
+GEN_OFFSET_SYM(z_arch_esf_t, eip);
+GEN_OFFSET_SYM(z_arch_esf_t, cs);
+GEN_OFFSET_SYM(z_arch_esf_t, eflags);
 
 /* tTaskStateSegment structure member offsets */
 
@@ -83,5 +73,10 @@ GEN_OFFSET_SYM(NANO_ESF, eflags);
 /* size of the MMU_REGION structure. Used by linker scripts */
 
 GEN_ABSOLUTE_SYM(__MMU_REGION_SIZEOF, sizeof(struct mmu_region));
+
+/* size of struct x86_multiboot_info, used by crt0.S */
+
+GEN_ABSOLUTE_SYM(__X86_MULTIBOOT_INFO_SIZEOF,
+	sizeof(struct x86_multiboot_info));
 
 GEN_ABS_SYM_END

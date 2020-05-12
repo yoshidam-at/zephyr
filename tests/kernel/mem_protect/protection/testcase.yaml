@@ -1,4 +1,5 @@
 tests:
   kernel.memory_protection.protection:
-    filter: CONFIG_CPU_HAS_MPU or CONFIG_X86_MMU
+    platform_exclude: twr_ke18f
+    filter: CONFIG_MEMORY_PROTECTION
     tags: kernel security ignore_faults

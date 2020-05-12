@@ -10,11 +10,11 @@
 #ifndef ZEPHYR_INCLUDE_BLUETOOTH_ATT_H_
 #define ZEPHYR_INCLUDE_BLUETOOTH_ATT_H_
 
+#include <sys/slist.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <misc/slist.h>
 
 /* Error codes for Error response PDU */
 #define BT_ATT_ERR_INVALID_HANDLE		0x01
@@ -34,6 +34,8 @@ extern "C" {
 #define BT_ATT_ERR_INSUFFICIENT_ENCRYPTION	0x0f
 #define BT_ATT_ERR_UNSUPPORTED_GROUP_TYPE	0x10
 #define BT_ATT_ERR_INSUFFICIENT_RESOURCES	0x11
+#define BT_ATT_ERR_DB_OUT_OF_SYNC		0x12
+#define BT_ATT_ERR_VALUE_NOT_ALLOWED		0x13
 
 /* Common Profile Error Codes (from CSS) */
 #define BT_ATT_ERR_WRITE_REQ_REJECTED		0xfc

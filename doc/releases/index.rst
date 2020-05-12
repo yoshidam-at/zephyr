@@ -24,6 +24,8 @@ specific release and can be found at https://docs.zephyrproject.org/.
 .. toctree::
    :maxdepth: 1
 
+   release-notes-2.0
+   release-notes-1.14
    release-notes-1.13
    release-notes-1.12
    release-notes-1.11

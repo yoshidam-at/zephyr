@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: Virtual I2C slave eeprom
-version: 0.1
 
 description: >
     This binding gives a base representation of a generic I2C slave EEPROM
@@ -20,6 +19,3 @@ properties:
       type: int
       category: required
       description: I2C Slave EEPROM Size in KiB
-      generation: define
-
-...

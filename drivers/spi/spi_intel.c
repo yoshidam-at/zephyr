@@ -16,18 +16,18 @@ LOG_MODULE_REGISTER(spi_intel);
 #include <kernel.h>
 #include <arch/cpu.h>
 
-#include <misc/__assert.h>
+#include <sys/__assert.h>
 #include <soc.h>
 #include <init.h>
 
-#include <sys_io.h>
-#include <power.h>
+#include <sys/sys_io.h>
+#include <power/power.h>
 
-#include <spi.h>
+#include <drivers/spi.h>
 #include "spi_intel.h"
 
 #ifdef CONFIG_IOAPIC
-#include <drivers/ioapic.h>
+#include <drivers/interrupt_controller/ioapic.h>
 #endif
 
 static void completed(struct device *dev, u32_t error)
@@ -96,6 +96,7 @@ static void push_data(struct device *dev)
 			case 1:
 				data = UNALIGNED_GET((u8_t *)
 						     (spi->ctx.tx_buf));
+				break;
 			case 2:
 				data = UNALIGNED_GET((u16_t *)
 						     (spi->ctx.tx_buf));
@@ -389,20 +390,25 @@ static int spi_intel_resume_from_suspend(struct device *dev)
 * the *context may include IN data or/and OUT data
 */
 static int spi_intel_device_ctrl(struct device *dev, u32_t ctrl_command,
-				 void *context)
+				 void *context, device_pm_cb cb, void *arg)
 {
+	int ret = 0;
+
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
 		if (*((u32_t *)context) == DEVICE_PM_SUSPEND_STATE) {
-			return spi_intel_suspend(dev);
+			ret = spi_intel_suspend(dev);
 		} else if (*((u32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
-			return spi_intel_resume_from_suspend(dev);
+			ret = spi_intel_resume_from_suspend(dev);
 		}
 	} else if (ctrl_command == DEVICE_PM_GET_POWER_STATE) {
 		*((u32_t *)context) = spi_intel_get_power_state(dev);
-		return 0;
 	}
 
-	return 0;
+	if (cb) {
+		cb(dev, ret, context, arg);
+	}
+
+	return ret;
 }
 #else
 #define spi_intel_set_power_state(...)

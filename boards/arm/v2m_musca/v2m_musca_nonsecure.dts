@@ -28,6 +28,14 @@
 			device_type = "cpu";
 			compatible = "arm,cortex-m33";
 			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			mpu: mpu@e000ed90 {
+				compatible = "arm,armv8m-mpu";
+				reg = <0xe000ed90 0x40>;
+				arm,num-mpu-regions = <8>;
+			};
 		};
 	};
 
@@ -39,6 +47,12 @@
 	sram0: memory@20010000 {
 		compatible = "mmio-sram";
 		reg = <0x20010000 0x10000>;
+	};
+
+	sysclk: system-clock {
+		compatible = "fixed-clock";
+		clock-frequency = <50000000>;
+		#clock-cells = <0>;
 	};
 
 	soc {

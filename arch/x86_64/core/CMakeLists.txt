@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 zephyr_library()
 
 zephyr_library_sources(
@@ -42,10 +44,11 @@ add_custom_command(
     -c ${CMAKE_CURRENT_SOURCE_DIR}/xuk-stub32.c
     -o ${CMAKE_CURRENT_BINARY_DIR}/xuk-stub32.o
   COMMAND ${CMAKE_C_COMPILER} -m32 ${X86_64_BASE_CFLAGS}
-    -Wl,--build-id=none -nostdlib -nodefaultlibs -nostartfiles
+    -Wl,--build-id=none -nostdlib -nodefaultlibs -nostartfiles -no-pie
     -T ${CMAKE_CURRENT_SOURCE_DIR}/xuk-stub32.ld
     ${CMAKE_CURRENT_BINARY_DIR}/xuk-stub32.o
     -o ${CMAKE_CURRENT_BINARY_DIR}/xuk-stub32.elf
+    ${LINKERFLAGPREFIX},-melf_i386
   COMMAND ${CMAKE_OBJCOPY} -O binary
     ${CMAKE_CURRENT_BINARY_DIR}/xuk-stub32.elf
     ${incdir}/xuk-stub32.bin
@@ -68,4 +71,5 @@ add_custom_command(
   COMMAND ${CMAKE_C_COMPILER} -m32 -T ${CMAKE_CURRENT_SOURCE_DIR}/xuk64.ld
           -Wl,--build-id=none -nostdlib -nodefaultlibs -nostartfiles
           -o ${qkernel_file} ${CMAKE_CURRENT_BINARY_DIR}/zephyr-qemu.o
+          ${LINKERFLAGPREFIX},-melf_i386
   )

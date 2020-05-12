@@ -1,6 +1,4 @@
----
 title: TI LP5562 LED Driver
-version: 0.1
 
 description: TI LP5562 LED binding
 
@@ -9,8 +7,4 @@ inherits:
 
 properties:
     compatible:
-      type: string
-      category: required
-      description: compatible strings
       constraint: "ti,lp5562"
-...

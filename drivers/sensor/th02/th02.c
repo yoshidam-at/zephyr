@@ -6,11 +6,11 @@
 
 #include <kernel.h>
 #include <device.h>
-#include <i2c.h>
-#include <misc/byteorder.h>
-#include <misc/util.h>
-#include <sensor.h>
-#include <misc/__assert.h>
+#include <drivers/i2c.h>
+#include <sys/byteorder.h>
+#include <sys/util.h>
+#include <drivers/sensor.h>
+#include <sys/__assert.h>
 #include <logging/log.h>
 
 #include "th02.h"
@@ -56,7 +56,6 @@ static u16_t get_humi(struct device *dev)
 	}
 	while (!is_ready(dev)) {
 	}
-	;
 
 	humidity = read8(dev, TH02_REG_DATA_H) << 8;
 	humidity |= read8(dev, TH02_REG_DATA_L);
@@ -76,7 +75,6 @@ u16_t get_temp(struct device *dev)
 	}
 	while (!is_ready(dev)) {
 	}
-	;
 
 	temperature = read8(dev, TH02_REG_DATA_H) << 8;
 	temperature |= read8(dev, TH02_REG_DATA_L);
@@ -109,11 +107,11 @@ static int th02_channel_get(struct device *dev, enum sensor_channel chan,
 
 	if (chan == SENSOR_CHAN_AMBIENT_TEMP) {
 		/* val = sample / 32 - 50 */
-		val->val1 = drv_data->t_sample / 32 - 50;
+		val->val1 = drv_data->t_sample / 32U - 50;
 		val->val2 = (drv_data->t_sample % 32) * (1000000 / 32);
 	} else {
 		/* val = sample / 16 -24 */
-		val->val1 = drv_data->rh_sample / 16 - 24;
+		val->val1 = drv_data->rh_sample / 16U - 24;
 		val->val2 = (drv_data->rh_sample % 16) * (1000000 / 16);
 	}
 

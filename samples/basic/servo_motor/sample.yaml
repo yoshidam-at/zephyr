@@ -1,8 +1,8 @@
 sample:
   name: Servo Motor using PWM
 tests:
-  test:
-    # FIXME: We should remove those and just rely on depends_on
-    platform_whitelist: arduino_101 quark_d2000_crb bbc_microbit
+  sample.servo_motor:
     tags: drivers pwm
     depends_on: pwm
+    harness: motor
+    filter: DT_ALIAS_PWM_0_LABEL

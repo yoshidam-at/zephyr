@@ -18,13 +18,13 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <errno.h>
 #include <init.h>
 #include <kernel.h>
-#include <misc/__assert.h>
+#include <sys/__assert.h>
 #include <net/net_core.h>
 #include <net/net_pkt.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys_io.h>
+#include <sys/sys_io.h>
 #include <net/ethernet.h>
 #include "ethernet/eth_stats.h"
 
@@ -81,8 +81,8 @@ static int smsc_mac_regwrite(u8_t reg, u32_t val)
 
 int smsc_phy_regread(u8_t regoffset, u32_t *data)
 {
-	u32_t val = 0;
-	u32_t phycmd = 0;
+	u32_t val = 0U;
+	u32_t phycmd = 0U;
 	unsigned int time_out = REG_WRITE_TIMEOUT;
 
 	if (smsc_mac_regread(SMSC9220_MAC_MII_ACC, &val) < 0) {
@@ -90,11 +90,11 @@ int smsc_phy_regread(u8_t regoffset, u32_t *data)
 	}
 
 	if (val & MAC_MII_ACC_MIIBZY) {
-		*data = 0;
+		*data = 0U;
 		return -EBUSY;
 	}
 
-	phycmd = 0;
+	phycmd = 0U;
 	phycmd |= PHY_ADDR << 11;
 	phycmd |= (regoffset & 0x1F) << 6;
 	phycmd |= MAC_MII_ACC_READ;
@@ -104,16 +104,16 @@ int smsc_phy_regread(u8_t regoffset, u32_t *data)
 		return -1;
 	}
 
-	val = 0;
+	val = 0U;
 	do {
 		k_sleep(1);
 		time_out--;
 		if (smsc_mac_regread(SMSC9220_MAC_MII_ACC, &val)) {
 			return -1;
 		}
-	} while (time_out != 0 && (val & MAC_MII_ACC_MIIBZY));
+	} while (time_out != 0U && (val & MAC_MII_ACC_MIIBZY));
 
-	if (time_out == 0) {
+	if (time_out == 0U) {
 		return -ETIMEDOUT;
 	}
 
@@ -126,8 +126,8 @@ int smsc_phy_regread(u8_t regoffset, u32_t *data)
 
 int smsc_phy_regwrite(u8_t regoffset, u32_t data)
 {
-	u32_t val = 0;
-	u32_t phycmd = 0;
+	u32_t val = 0U;
+	u32_t phycmd = 0U;
 	unsigned int time_out = REG_WRITE_TIMEOUT;
 
 	if (smsc_mac_regread(SMSC9220_MAC_MII_ACC, &val) < 0) {
@@ -157,9 +157,9 @@ int smsc_phy_regwrite(u8_t regoffset, u32_t data)
 		if (smsc_mac_regread(SMSC9220_MAC_MII_ACC, &phycmd)) {
 			return -1;
 		}
-	} while (time_out != 0 && (phycmd & MAC_MII_ACC_MIIBZY));
+	} while (time_out != 0U && (phycmd & MAC_MII_ACC_MIIBZY));
 
-	if (time_out == 0) {
+	if (time_out == 0U) {
 		return -ETIMEDOUT;
 	}
 
@@ -224,9 +224,9 @@ static int smsc_soft_reset(void)
 	do {
 		k_sleep(1);
 		time_out--;
-	} while (time_out != 0 && (SMSC9220->HW_CFG & HW_CFG_SRST));
+	} while (time_out != 0U && (SMSC9220->HW_CFG & HW_CFG_SRST));
 
-	if (time_out == 0) {
+	if (time_out == 0U) {
 		return -1;
 	}
 
@@ -236,7 +236,7 @@ static int smsc_soft_reset(void)
 void smsc_set_txfifo(unsigned int val)
 {
 	/* 2kb minimum, 14kb maximum */
-	if (val >= 2 && val <= 14) {
+	if (val >= 2U && val <= 14U) {
 		SMSC9220->HW_CFG = val << 16;
 	}
 }
@@ -289,7 +289,7 @@ int smsc_reset_phy(void)
  */
 void smsc_advertise_caps(void)
 {
-	u32_t aneg_adv = 0;
+	u32_t aneg_adv = 0U;
 
 	smsc_phy_regread(SMSC9220_PHY_ANEG_ADV, &aneg_adv);
 	aneg_adv |= 0xDE0;
@@ -300,8 +300,8 @@ void smsc_advertise_caps(void)
 
 void smsc_establish_link(void)
 {
-	u32_t bcr = 0;
-	u32_t hw_cfg = 0;
+	u32_t bcr = 0U;
+	u32_t hw_cfg = 0U;
 
 	smsc_phy_regread(SMSC9220_PHY_BCONTROL, &bcr);
 	bcr |= (1 << 12) | (1 << 9);
@@ -314,14 +314,14 @@ void smsc_establish_link(void)
 	SMSC9220->HW_CFG = hw_cfg;
 }
 
-inline void smsc_enable_xmit(void)
+static inline void smsc_enable_xmit(void)
 {
 	SMSC9220->TX_CFG = 0x2 /*TX_CFG_TX_ON*/;
 }
 
 void smsc_enable_mac_xmit(void)
 {
-	u32_t mac_cr = 0;
+	u32_t mac_cr = 0U;
 
 	smsc_mac_regread(SMSC9220_MAC_CR, &mac_cr);
 
@@ -333,7 +333,7 @@ void smsc_enable_mac_xmit(void)
 
 void smsc_enable_mac_recv(void)
 {
-	u32_t mac_cr = 0;
+	u32_t mac_cr = 0U;
 
 	smsc_mac_regread(SMSC9220_MAC_CR, &mac_cr);
 	mac_cr |= (1 << 2);     /* Recv enable */
@@ -342,7 +342,7 @@ void smsc_enable_mac_recv(void)
 
 int smsc_init(void)
 {
-	unsigned int phyreset = 0;
+	unsigned int phyreset = 0U;
 
 	if (smsc_check_id() < 0) {
 		return -1;
@@ -455,13 +455,13 @@ static int smsc_write_tx_fifo(const u8_t *buf, u32_t len, bool is_last)
 		len = (len + 3) & ~3;
 	}
 
-	if ((len & 3) != 0 || len == 0) {
+	if ((len & 3) != 0U || len == 0U) {
 		LOG_ERR("Chunk size not aligned: %u", len);
 		return -1;
 	}
 
 	buf32 = (u32_t *)buf;
-	len /= 4;
+	len /= 4U;
 	do {
 		SMSC9220->TX_DATA_PORT = *buf32++;
 	} while (--len);
@@ -471,12 +471,11 @@ static int smsc_write_tx_fifo(const u8_t *buf, u32_t len, bool is_last)
 
 static int eth_tx(struct device *dev, struct net_pkt *pkt)
 {
-	int res;
 	u16_t total_len = net_pkt_get_len(pkt);
-	u16_t sent;
-	static u8_t tx_buf[1514] __aligned(4);
+	static u8_t tx_buf[NET_ETH_MAX_FRAME_SIZE] __aligned(4);
 	u32_t txcmd_a, txcmd_b;
 	u32_t tx_stat;
+	int res;
 
 	txcmd_a = (1/*is_first_segment*/ << 13) | (1/*is_last_segment*/ << 12)
 		  | total_len;
@@ -485,9 +484,11 @@ static int eth_tx(struct device *dev, struct net_pkt *pkt)
 	SMSC9220->TX_DATA_PORT = txcmd_a;
 	SMSC9220->TX_DATA_PORT = txcmd_b;
 
-	sent = net_frag_linearize(tx_buf, sizeof(tx_buf), pkt,
-				  0, sizeof(tx_buf));
-	res = smsc_write_tx_fifo(tx_buf, sent, true);
+	if (net_pkt_read(pkt, tx_buf, total_len)) {
+		goto error;
+	}
+
+	res = smsc_write_tx_fifo(tx_buf, total_len, true);
 	if (res < 0) {
 		goto error;
 	}
@@ -531,76 +532,59 @@ static inline void smsc_wait_discard_pkt(void)
 	}
 }
 
-static void smsc_read_rx_fifo(u8_t *buf, u32_t len)
+static int smsc_read_rx_fifo(struct net_pkt *pkt, u32_t len)
 {
-	u32_t *buf32;
+	u32_t buf32;
 
-	__ASSERT_NO_MSG(((uintptr_t)buf & 3) == 0);
-	__ASSERT_NO_MSG((len & 3) == 0 && len >= 4);
+	__ASSERT_NO_MSG((len & 3) == 0U && len >= 4U);
 
-	buf32 = (u32_t *)buf;
-	len /= 4;
+	len /= 4U;
+
 	do {
-		*buf32++ = SMSC9220->RX_DATA_PORT;
+		buf32 = SMSC9220->RX_DATA_PORT;
+
+		if (net_pkt_write(pkt, &buf32, sizeof(u32_t))) {
+			return -1;
+		}
 	} while (--len);
+
+	return 0;
 }
 
-static struct net_pkt *smsc_recv_pkt(u32_t pkt_size)
+static struct net_pkt *smsc_recv_pkt(struct device *dev, u32_t pkt_size)
 {
+	struct eth_context *context = dev->driver_data;
+	struct net_pkt *pkt;
 	u32_t rem_size;
-	struct net_buf *prev_buf;
-	struct net_pkt *pkt = net_pkt_get_reserve_rx(K_NO_WAIT);
 
-	if (pkt == NULL) {
-		LOG_ERR("get_rx == NULL");
+	/* Round up to next DWORD size */
+	rem_size = (pkt_size + 3) & ~3;
+	/* Don't account for FCS when filling net pkt */
+	rem_size -= 4U;
+
+	pkt = net_pkt_rx_alloc_with_buffer(context->iface, rem_size,
+					   AF_UNSPEC, 0, K_NO_WAIT);
+	if (!pkt) {
+		LOG_ERR("Failed to obtain RX buffer");
 		smsc_discard_pkt();
 		return NULL;
 	}
 
-	prev_buf = NULL;
-	/* Round up to next DWORD size */
-	rem_size = (pkt_size + 3) & ~3;
-	/* Don't account for FCS when filling net buffers */
-	rem_size -= 4;
-	do {
-		u32_t frag_len;
-		struct net_buf *pkt_buf = net_pkt_get_frag(pkt,
-							   K_NO_WAIT);
-		if (pkt_buf == NULL) {
-			LOG_ERR("Failed to get fragment buf");
-			net_pkt_unref(pkt);
-			smsc_discard_pkt();
-			return NULL;
-		}
-
-		if (!prev_buf) {
-			net_pkt_frag_insert(pkt, pkt_buf);
-		} else {
-			net_buf_frag_insert(prev_buf, pkt_buf);
-		}
-
-		frag_len = net_buf_tailroom(pkt_buf);
-		if (frag_len > rem_size) {
-			frag_len = rem_size;
-		}
-		smsc_read_rx_fifo(pkt_buf->data, frag_len);
-		rem_size -= frag_len;
-		net_buf_add(pkt_buf, frag_len);
-		/*LOG_DBG("rem_size=%u", rem_size);*/
-
-		prev_buf = pkt_buf;
-	} while (rem_size != 0);
+	if (smsc_read_rx_fifo(pkt, rem_size) < 0) {
+		smsc_discard_pkt();
+		net_pkt_unref(pkt);
+		return NULL;
+	}
 
 	/* Discard FCS */
 	{
-		u32_t dummy;
-
-		smsc_read_rx_fifo((u8_t *)&dummy, 4);
+		u32_t __unused dummy = SMSC9220->RX_DATA_PORT;
 	}
 
 	/* Adjust len of the last buf down for DWORD alignment */
 	if (pkt_size & 3) {
-		prev_buf->len -= 4 - (pkt_size & 3);
+		net_pkt_update_length(pkt, net_pkt_get_len(pkt) -
+				      (4 - (pkt_size & 3)));
 	}
 
 	return pkt;
@@ -632,7 +616,7 @@ static void eth_smsc911x_isr(struct device *dev)
 		 * pending for as long as there're packets in FIFO. And when
 		 * there's none, finally acknowledge it.
 		 */
-		if (pkt_pending == 0) {
+		if (pkt_pending == 0U) {
 			goto done;
 		}
 
@@ -647,7 +631,7 @@ static void eth_smsc911x_isr(struct device *dev)
 		pkt_size = BFIELD(rx_stat, RX_STAT_PORT_PKT_LEN);
 		LOG_DBG("pkt sz: %u", pkt_size);
 
-		pkt = smsc_recv_pkt(pkt_size);
+		pkt = smsc_recv_pkt(dev, pkt_size);
 
 		LOG_DBG("out RX FIFO: pkts: %u, bytes: %u",
 			SMSC9220_BFIELD(RX_FIFO_INF, RXSUSED),
@@ -675,8 +659,8 @@ static struct device DEVICE_NAME_GET(eth_smsc911x_0);
 
 int eth_init(struct device *dev)
 {
-	IRQ_CONNECT(DT_SMSC_LAN9220_0_IRQ_0,
-		    DT_SMSC_LAN9220_0_IRQ_0_PRIORITY,
+	IRQ_CONNECT(DT_INST_0_SMSC_LAN9220_IRQ_0,
+		    DT_INST_0_SMSC_LAN9220_IRQ_0_PRIORITY,
 		    eth_smsc911x_isr, DEVICE_GET(eth_smsc911x_0), 0);
 
 	int ret = smsc_init();
@@ -686,7 +670,7 @@ int eth_init(struct device *dev)
 		return -ENODEV;
 	}
 
-	irq_enable(DT_SMSC_LAN9220_0_IRQ_0);
+	irq_enable(DT_INST_0_SMSC_LAN9220_IRQ_0);
 
 	return ret;
 }
@@ -695,5 +679,5 @@ static struct eth_context eth_0_context;
 
 ETH_NET_DEVICE_INIT(eth_smsc911x_0, "smsc911x_0",
 		eth_init, &eth_0_context,
-		NULL/*&eth_config_0*/, CONFIG_ETH_INIT_PRIORITY, &api_funcs,
-		1500/*MTU*/);
+		NULL /*&eth_config_0*/, CONFIG_ETH_INIT_PRIORITY, &api_funcs,
+		NET_ETH_MTU /*MTU*/);

@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: ST Microelectronics MPXXDTYY digital pdm microphone family
-version: 0.1
 
 description: >
     This binding gives a base representation of MPXXDTYY digital microphone family
@@ -17,9 +16,4 @@ properties:
     compatible:
       constraint: "st,mpxxdtyy"
     label:
-      type: string
       category: required
-      description: Human readable string describing the device (used by Zephyr for API name)
-      generation: define
-
-...

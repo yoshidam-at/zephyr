@@ -41,7 +41,24 @@ GTEXT(_IntExit)
  */
 SECTION_FUNC(TEXT, _isr_wrapper)
 
+#if defined(CONFIG_CPU_CORTEX_M)
 	push {r0,lr}		/* r0, lr are now the first items on the stack */
+#elif defined(CONFIG_CPU_CORTEX_R)
+	/*
+	 * Save away r0-r3 from previous context to the process stack since they
+	 * are clobbered here.  Also, save away lr since we may swap processes
+	 * and return to a different thread.
+	 */
+	push {r4, r5}
+	mov r4, r12
+	sub r5, lr, #4
+
+	cps #MODE_SYS
+	stmdb sp!, {r0-r5}
+	cps #MODE_IRQ
+
+	pop {r4, r5}
+#endif
 
 #ifdef CONFIG_EXECUTION_BENCHMARKING
 	bl read_timer_start_of_isr
@@ -57,7 +74,7 @@ SECTION_FUNC(TEXT, _isr_wrapper)
 	 * idle, this ensures that the calculation and programming of the device
 	 * for the next timer deadline is not interrupted.  For non-tickless idle,
 	 * this ensures that the clearing of the kernel idle state is not
-	 * interrupted.  In each case, _sys_power_save_idle_exit is called with
+	 * interrupted.  In each case, z_sys_power_save_idle_exit is called with
 	 * interrupts disabled.
 	 */
 	cpsid i  /* PRIMASK = 1 */
@@ -73,7 +90,7 @@ SECTION_FUNC(TEXT, _isr_wrapper)
 	movs.n r1, #0
 	/* clear kernel idle state */
 	str r1, [r2, #_kernel_offset_to_idle]
-	blx _sys_power_save_idle_exit
+	bl z_sys_power_save_idle_exit
 _idle_state_cleared:
 
 #elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
@@ -81,7 +98,14 @@ _idle_state_cleared:
 	movne	r1, #0
 		/* clear kernel idle state */
 		strne	r1, [r2, #_kernel_offset_to_idle]
-		blxne	_sys_power_save_idle_exit
+		blne	z_sys_power_save_idle_exit
+#elif defined(CONFIG_ARMV7_R)
+	beq _idle_state_cleared
+	movs r1, #0
+	/* clear kernel idle state */
+	str r1, [r2, #_kernel_offset_to_idle]
+	bl z_sys_power_save_idle_exit
+_idle_state_cleared:
 #else
 #error Unknown ARM architecture
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
@@ -89,7 +113,9 @@ _idle_state_cleared:
 	cpsie i		/* re-enable interrupts (PRIMASK = 0) */
 #endif
 
+#if defined(CONFIG_CPU_CORTEX_M)
 	mrs r0, IPSR	/* get exception number */
+#endif
 #if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
 	ldr r1, =16
 	subs r0, r1	/* get IRQ number */
@@ -97,6 +123,12 @@ _idle_state_cleared:
 #elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
 	sub r0, r0, #16	/* get IRQ number */
 	lsl r0, r0, #3	/* table is 8-byte wide */
+#elif defined(CONFIG_ARMV7_R)
+	/*
+	 * Cortex-R only has one IRQ line so the main handler will be at
+	 * offset 0 of the table.
+	 */
+	mov r0, #0
 #else
 #error Unknown ARM architecture
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
@@ -128,12 +160,23 @@ _idle_state_cleared:
 	mov lr, r3
 #elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
 	pop {r0, lr}
+#elif defined(CONFIG_ARMV7_R)
+	/*
+	 * r0,lr were saved on the process stack since a swap could
+	 * happen.  exc_exit will handle getting those values back
+	 * from the process stack to return to the correct location
+	 * so there is no need to do anything here.
+	 */
 #else
 #error Unknown ARM architecture
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
 
+#if defined(CONFIG_CPU_CORTEX_R)
+	mov r0, #RET_FROM_IRQ
+#endif
+
 	/* Use 'bx' instead of 'b' because 'bx' can jump further, and use
 	 * 'bx' instead of 'blx' because exception return is done in
 	 * _IntExit() */
-	ldr r0, =_IntExit
-	bx r0
+	ldr r1, =_IntExit
+	bx r1

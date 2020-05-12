@@ -17,11 +17,11 @@
 
 #include <arch/cpu.h>
 
+#ifndef _ASMLANGUAGE
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#ifndef _ASMLANGUAGE
 
 /* i-cache defines for IC_CTRL register */
 #define IC_CACHE_ENABLE   0x00
@@ -34,7 +34,7 @@ extern "C" {
  *
  * Enables the i-cache and sets it to direct access mode.
  */
-static ALWAYS_INLINE void _icache_setup(void)
+static ALWAYS_INLINE void z_icache_setup(void)
 {
 	u32_t icache_config = (
 		IC_CACHE_DIRECT | /* direct mapping (one-way assoc.) */
@@ -42,18 +42,18 @@ static ALWAYS_INLINE void _icache_setup(void)
 	);
 	u32_t val;
 
-	val = _arc_v2_aux_reg_read(_ARC_V2_I_CACHE_BUILD);
+	val = z_arc_v2_aux_reg_read(_ARC_V2_I_CACHE_BUILD);
 	val &= 0xff;
-	if (val != 0) { /* is i-cache present? */
+	if (val != 0U) { /* is i-cache present? */
 		/* configure i-cache */
-		_arc_v2_aux_reg_write(_ARC_V2_IC_CTRL, icache_config);
+		z_arc_v2_aux_reg_write(_ARC_V2_IC_CTRL, icache_config);
 	}
 }
-
-#endif /* _ASMLANGUAGE */
 
 #ifdef __cplusplus
 }
 #endif
+
+#endif /* _ASMLANGUAGE */
 
 #endif /* ZEPHYR_ARCH_ARC_INCLUDE_V2_CACHE_H_ */

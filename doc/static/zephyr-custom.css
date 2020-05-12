@@ -23,13 +23,11 @@
 }
 */
 
-/* tweak doc version selection
+/* tweak doc version selection */
 .rst-versions {
-   position: static;
-   border-top: none;
-   padding: 0px;
+   position: static !important;
 }
-*/
+
 
 .rst-versions .rst-current-version {
    padding: 5px;
@@ -64,6 +62,12 @@ div.rst-other-versions dl {
 /* squish the space between a paragraph before a list */
 div > p + ul, div > p + ol {
    margin-top: -20px;
+}
+
+/* squish space before an hlist in a list */
+li table.hlist {
+   margin-top: -10px;
+   margin-bottom: 5px;
 }
 
 /* add some space before the figure caption */
@@ -107,6 +111,7 @@ table {
 /*  make .. hlist:: tables fill the page */
 table.hlist {
     width: 95% !important;
+    table-layout: fixed;
 }
 
 /*  override rtd theme white-space no-wrap in table heading and content  */
@@ -135,7 +140,7 @@ th,td {
 }
 
 /* doxygenXX item color tweaks, light blue background with dark blue top border */
-.rst-content dl:not(.docutils) dl dt, dl:not(.docutils) dt {
+.rst-content dl:not(.docutils) dl dt, dl:not(.docutils,.rst-other-versions) dt {
   background: #e7f2fa !important;
   border-top: none !important;
   border-left: none !important; */

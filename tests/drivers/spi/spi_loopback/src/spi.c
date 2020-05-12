@@ -9,12 +9,12 @@
 LOG_MODULE_REGISTER(main);
 
 #include <zephyr.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <string.h>
 #include <stdio.h>
 #include <ztest.h>
 
-#include <spi.h>
+#include <drivers/spi.h>
 
 #define SPI_DRV_NAME	CONFIG_SPI_LOOPBACK_DRV_NAME
 #define SPI_SLAVE	CONFIG_SPI_LOOPBACK_SLAVE_NUMBER
@@ -337,7 +337,7 @@ static void spi_async_call_cb(struct k_poll_event *async_evt,
 		k_sem_give(caller_sem);
 
 		/* Reinitializing for next call */
-		async_evt->signal->signaled = 0;
+		async_evt->signal->signaled = 0U;
 		async_evt->state = K_POLL_STATE_NOT_READY;
 	}
 }

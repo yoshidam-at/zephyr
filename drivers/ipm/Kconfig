@@ -1,22 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+
 menuconfig IPM
 	bool "IPM drivers"
 	help
 	  Include interrupt-based inter-processor mailboxes
 	  drivers in system configuration
-
-config IPM_QUARK_SE
-	bool "Quark SE IPM driver"
-	depends on IPM
-	help
-	  Driver for Quark SE mailboxes
-
-config IPM_QUARK_SE_MASTER
-	bool "Quark SE IPM master controller"
-	depends on IPM_QUARK_SE
-	help
-	  Enable this for the first CPU that initializes IPM.
-	  Sets up the initial interrupt mask and clears out all
-	  channels. Should be turned on for one CPU only.
 
 config IPM_MCUX
 	bool "MCUX IPM driver"
@@ -26,7 +14,6 @@ config IPM_MCUX
 
 config IPM_IMX
 	bool "IMX IPM driver"
-	default n
 	depends on IPM && HAS_IMX_HAL
 	help
 	  Driver for NXP i.MX messaging unit
@@ -75,3 +62,28 @@ config IPM_IMX_MAX_ID_VAL
 	default 1 if IPM_IMX_MAX_DATA_SIZE_8
 	default 0 if IPM_IMX_MAX_DATA_SIZE_16
 	depends on IPM_IMX
+
+config IPM_MHU
+	bool "IPM MHU driver"
+	depends on IPM
+	help
+	  Driver for SSE 200 MHU (Message Handling Unit)
+
+config IPM_STM32_IPCC
+	bool "STM32 IPCC controller"
+	depends on IPM
+	select USE_STM32_LL_IPCC
+	help
+	  Driver for stm32 IPCC mailboxes
+
+config IPM_STM32_IPCC_PROCID
+	int "STM32 IPCC Processor ID"
+	default 2
+	range 1 2
+	depends on IPM_STM32_IPCC
+	help
+	  use to define the Processor ID for IPCC access
+
+module = IPM
+module-str = ipm
+source "subsys/logging/Kconfig.template.log_config"

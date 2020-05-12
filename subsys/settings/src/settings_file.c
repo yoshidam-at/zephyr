@@ -8,18 +8,17 @@
 #include <string.h>
 #include <zephyr.h>
 
-#include <fs.h>
+#include <fs/fs.h>
 
 #include "settings/settings.h"
 #include "settings/settings_file.h"
 #include "settings_priv.h"
 
-static int settings_file_load(struct settings_store *cs, load_cb cb,
-			      void *cb_arg);
+static int settings_file_load(struct settings_store *cs, const char *subtree);
 static int settings_file_save(struct settings_store *cs, const char *name,
 			      const char *value, size_t val_len);
 
-static struct settings_store_itf settings_file_itf = {
+static const struct settings_store_itf settings_file_itf = {
 	.csi_load = settings_file_load,
 	.csi_save = settings_file_save,
 };
@@ -49,12 +48,9 @@ int settings_file_dst(struct settings_file *cf)
 	return 0;
 }
 
-/*
- * Called to load configuration items. cb must be called for every configuration
- * item found.
- */
-static int settings_file_load(struct settings_store *cs, load_cb cb,
-			      void *cb_arg)
+
+static int settings_file_load_priv(struct settings_store *cs, line_load_cb cb,
+				   void *cb_arg)
 {
 	struct settings_file *cf = (struct settings_file *)cs;
 	char buf[SETTINGS_MAX_NAME_LEN + SETTINGS_EXTRA_LEN + 1];
@@ -108,6 +104,15 @@ static int settings_file_load(struct settings_store *cs, load_cb cb,
 	cf->cf_lines = lines;
 
 	return rc;
+}
+
+/*
+ * Called to load configuration items.
+ */
+static int settings_file_load(struct settings_store *cs, const char *subtree)
+{
+	return settings_file_load_priv(cs, settings_line_load_cb,
+				       (void *)subtree);
 }
 
 static void settings_tmpfile(char *dst, const char *src, char *pfx)
@@ -247,7 +252,7 @@ int settings_file_save_and_compress(struct settings_file *cf, const char *name,
 		loc2 = loc1;
 		loc2.len += 2;
 		loc2.seek -= 2;
-		rc = settings_entry_copy(&loc3, 0, &loc2, 0, loc2.len);
+		rc = settings_line_entry_copy(&loc3, 0, &loc2, 0, loc2.len);
 		if (rc) {
 			/* compressed file might be corrupted */
 			goto end_rolback;
@@ -287,11 +292,8 @@ end_rolback:
 
 }
 
-/*
- * Called to save configuration.
- */
-static int settings_file_save(struct settings_store *cs, const char *name,
-			      const char *value, size_t val_len)
+static int settings_file_save_priv(struct settings_store *cs, const char *name,
+				   const char *value, size_t val_len)
 {
 	struct settings_file *cf = (struct settings_file *)cs;
 	struct line_entry_ctx entry_ctx;
@@ -336,6 +338,33 @@ static int settings_file_save(struct settings_store *cs, const char *name,
 	return rc;
 }
 
+
+/*
+ * Called to save configuration.
+ */
+static int settings_file_save(struct settings_store *cs, const char *name,
+			      const char *value, size_t val_len)
+{
+	struct settings_line_dup_check_arg cdca;
+
+	if (val_len > 0 && value == NULL) {
+		return -EINVAL;
+	}
+
+	/*
+	 * Check if we're writing the same value again.
+	 */
+	cdca.name = name;
+	cdca.val = (char *)value;
+	cdca.is_dup = 0;
+	cdca.val_len = val_len;
+	settings_file_load_priv(cs, settings_line_dup_check_cb, &cdca);
+	if (cdca.is_dup == 1) {
+		return 0;
+	}
+	return settings_file_save_priv(cs, name, (char *)value, val_len);
+}
+
 static int read_handler(void *ctx, off_t off, char *buf, size_t *len)
 {
 	struct line_entry_ctx *entry_ctx = ctx;
@@ -346,7 +375,8 @@ static int read_handler(void *ctx, off_t off, char *buf, size_t *len)
 	/* 0 is reserved for reding the length-field only */
 	if (entry_ctx->len != 0) {
 		if (off >= entry_ctx->len) {
-			return -EINVAL;
+			*len = 0;
+			return 0;
 		}
 
 		if ((off + *len) > entry_ctx->len) {

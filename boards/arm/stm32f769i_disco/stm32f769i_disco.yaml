@@ -6,10 +6,11 @@ toolchain:
   - zephyr
   - gnuarmemb
   - xtools
-ram: 512
+ram: 384
 flash: 2048
 supported:
   - arduino_i2c
   - i2c
   - spi
   - gpio
+  - netif:eth

@@ -10,7 +10,8 @@
 #define TICKER_USER_ID_ULL_LOW  MAYFLY_CALL_ID_2
 #define TICKER_USER_ID_THREAD   MAYFLY_CALL_ID_PROGRAM
 
-#define EVENT_PIPELINE_MAX            5
+#define EVENT_PIPELINE_MAX 7
+#define EVENT_DONE_MAX 3
 
 #define HDR_ULL(p)     ((void *)((u8_t *)(p) + sizeof(struct evt_hdr)))
 #define HDR_ULL2LLL(p) ((struct lll_hdr *)((u8_t *)(p) + \
@@ -22,24 +23,19 @@
 #endif /* CONFIG_BT_CTLR_XTAL_ADVANCED */
 
 #if defined(CONFIG_BT_BROADCASTER) && defined(CONFIG_BT_ADV_SET)
-#define CONFIG_BT_ADV_MAX (CONFIG_BT_ADV_SET + 1)
+#define BT_CTLR_ADV_MAX (CONFIG_BT_ADV_SET + 1)
 #else
-#define CONFIG_BT_ADV_MAX 1
+#define BT_CTLR_ADV_MAX 1
 #endif
 
 enum {
 	TICKER_ID_LLL_PREEMPT = 0,
 
-#if defined(CONFIG_BT_TMP)
-	TICKER_ID_TMP_BASE,
-	TICKER_ID_TMP_LAST = ((TICKER_ID_TMP_BASE) + (CONFIG_BT_TMP_MAX) - 1),
-#endif /* CONFIG_BT_TMP */
-
 #if defined(CONFIG_BT_BROADCASTER)
 	TICKER_ID_ADV_STOP,
 	TICKER_ID_ADV_BASE,
 #if defined(CONFIG_BT_CTLR_ADV_EXT) || defined(CONFIG_BT_HCI_MESH_EXT)
-	TICKER_ID_ADV_LAST = ((TICKER_ID_ADV_BASE) + (CONFIG_BT_ADV_MAX) - 1),
+	TICKER_ID_ADV_LAST = ((TICKER_ID_ADV_BASE) + (BT_CTLR_ADV_MAX) - 1),
 #endif /* !CONFIG_BT_CTLR_ADV_EXT || !CONFIG_BT_HCI_MESH_EXT */
 #endif /* CONFIG_BT_BROADCASTER */
 
@@ -79,7 +75,7 @@ struct evt_hdr {
 };
 
 struct ull_hdr {
-	u8_t ref;
+	u8_t ref; /* Number of ongoing (between Prepare and Done) events */
 	void (*disabled_cb)(void *param);
 	void *disabled_param;
 };
@@ -108,17 +104,22 @@ struct lll_event {
 	lll_is_abort_cb_t        is_abort_cb;
 	lll_abort_cb_t           abort_cb;
 	int                      prio;
-	u8_t			 is_resume:1;
-	u8_t			 is_aborted:1;
+	u8_t                     is_resume:1;
+	u8_t                     is_aborted:1;
 };
 
 enum node_rx_type {
+	/* Unused */
 	NODE_RX_TYPE_NONE = 0x00,
+	/* Signals completion of RX event */
 	NODE_RX_TYPE_EVENT_DONE = 0x01,
+	/* Signals arrival of RX Data Channel payload */
 	NODE_RX_TYPE_DC_PDU = 0x02,
+	/* Signals release of RX Data Channel payload */
 	NODE_RX_TYPE_DC_PDU_RELEASE = 0x03,
 
 #if defined(CONFIG_BT_OBSERVER)
+	/* Advertisement report from scanning */
 	NODE_RX_TYPE_REPORT = 0x04,
 #endif /* CONFIG_BT_OBSERVER */
 
@@ -168,8 +169,37 @@ enum node_rx_type {
 	NODE_RX_TYPE_MESH_ADV_CPLT = 0x13,
 	NODE_RX_TYPE_MESH_REPORT = 0x14,
 #endif /* CONFIG_BT_HCI_MESH_EXT */
+
+/* Following proprietary defines must be at end of enum range */
+#if defined(CONFIG_BT_CTLR_USER_EXT)
+	NODE_RX_TYPE_USER_START = 0x15,
+	NODE_RX_TYPE_USER_END = NODE_RX_TYPE_USER_START +
+				CONFIG_BT_CTLR_USER_EVT_RANGE,
+#endif /* CONFIG_BT_CTLR_USER_EXT */
+
 };
 
+/* Footer of node_rx_hdr */
+struct node_rx_ftr {
+	void  *param;
+	void  *extra;
+	u32_t ticks_anchor;
+	u32_t us_radio_end;
+	u32_t us_radio_rdy;
+	u8_t  rssi;
+#if defined(CONFIG_BT_CTLR_PRIVACY)
+	u8_t  rl_idx;
+#endif /* CONFIG_BT_CTLR_PRIVACY */
+#if defined(CONFIG_BT_CTLR_EXT_SCAN_FP)
+	u8_t  direct;
+#endif /* CONFIG_BT_CTLR_EXT_SCAN_FP */
+#if defined(CONFIG_BT_HCI_MESH_EXT)
+	u8_t  chan_idx;
+#endif /* CONFIG_BT_HCI_MESH_EXT */
+};
+
+
+/* Header of node_rx_pdu */
 struct node_rx_hdr {
 	union {
 		void        *next;
@@ -179,14 +209,8 @@ struct node_rx_hdr {
 
 	enum node_rx_type   type;
 	u16_t               handle;
-};
 
-struct node_rx_ftr {
-	void  *param;
-	void  *extra;
-	u32_t ticks_anchor;
-	u32_t us_radio_end;
-	u32_t us_radio_rdy;
+	struct node_rx_ftr  rx_ftr;
 };
 
 struct node_rx_pdu {
@@ -197,6 +221,13 @@ struct node_rx_pdu {
 enum {
 	EVENT_DONE_EXTRA_TYPE_NONE,
 	EVENT_DONE_EXTRA_TYPE_CONN,
+/* Following proprietary defines must be at end of enum range */
+#if defined(CONFIG_BT_CTLR_USER_EXT)
+	EVENT_DONE_EXTRA_TYPE_USER_START,
+	EVENT_DONE_EXTRA_TYPE_USER_END = EVENT_DONE_EXTRA_TYPE_USER_START +
+		CONFIG_BT_CTLR_USER_EVT_RANGE,
+#endif /* CONFIG_BT_CTLR_USER_EXT */
+
 };
 
 struct event_done_extra_slave {
@@ -232,7 +263,7 @@ static inline void lll_hdr_init(void *lll, void *parent)
 	struct lll_hdr *hdr = lll;
 
 	hdr->parent = parent;
-	hdr->is_stop = 0;
+	hdr->is_stop = 0U;
 }
 
 static inline int lll_stop(void *lll)
@@ -240,7 +271,7 @@ static inline int lll_stop(void *lll)
 	struct lll_hdr *hdr = lll;
 	int ret = !!hdr->is_stop;
 
-	hdr->is_stop = 1;
+	hdr->is_stop = 1U;
 
 	return ret;
 }
@@ -258,6 +289,7 @@ int lll_prepare(lll_is_abort_cb_t is_abort_cb, lll_abort_cb_t abort_cb,
 		struct lll_prepare_param *prepare_param);
 void lll_resume(void *param);
 void lll_disable(void *param);
+u32_t lll_radio_is_idle(void);
 
 int ull_prepare_enqueue(lll_is_abort_cb_t is_abort_cb,
 			       lll_abort_cb_t abort_cb,

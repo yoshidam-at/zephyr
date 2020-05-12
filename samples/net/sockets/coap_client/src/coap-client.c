@@ -8,8 +8,8 @@
 LOG_MODULE_REGISTER(net_coap_client_sample, LOG_LEVEL_DBG);
 
 #include <errno.h>
-#include <misc/printk.h>
-#include <misc/byteorder.h>
+#include <sys/printk.h>
+#include <sys/byteorder.h>
 #include <zephyr.h>
 
 #include <net/socket.h>
@@ -61,6 +61,7 @@ static int start_coap_client(void)
 
 	addr6.sin6_family = AF_INET6;
 	addr6.sin6_port = htons(PEER_PORT);
+	addr6.sin6_scope_id = 0U;
 
 	inet_pton(AF_INET6, CONFIG_NET_CONFIG_PEER_IPV6_ADDR,
 		  &addr6.sin6_addr);
@@ -584,7 +585,7 @@ static int register_observer(void)
 		counter++;
 
 		/* Unregister */
-		if (counter == 5) {
+		if (counter == 5U) {
 			/* TODO: Functionality can be verified byt waiting for
 			 * some time and make sure client shouldn't receive
 			 * any notifications. If client still receives

@@ -8,6 +8,7 @@ toolchain:
   - gnuarmemb
   - xtools
 supported:
-  - netif:slip
+  - counter
+  - netif:serial-net
 testing:
   default: true

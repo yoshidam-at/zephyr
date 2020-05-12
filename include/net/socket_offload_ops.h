@@ -12,15 +12,24 @@
 #ifndef ZEPHYR_INCLUDE_NET_SOCKET_OFFLOAD_OPS_H_
 #define ZEPHYR_INCLUDE_NET_SOCKET_OFFLOAD_OPS_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <sys/types.h>
 #include <net/net_ip.h>
 #include <net/socket.h>  /* needed for struct pollfd */
 
-/*
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * @brief Socket Offload Redirect API
+ * @defgroup socket_offload Socket offloading interface
+ * @ingroup networking
+ * @{
+ */
+
+/**
+ * @brief An offloaded Socket API interface
+ *
  * It is assumed that these offload functions follow the
  * POSIX socket API standard for arguments, return values and setting of errno.
  */
@@ -52,7 +61,16 @@ struct socket_offload {
 	int (*fcntl)(int fd, int cmd, va_list args);
 };
 
+/**
+ * @brief Register an offloaded socket API interface.
+ *
+ * @param ops A pointer to the offloaded socket API interface.
+ */
 extern void socket_offload_register(const struct socket_offload *ops);
+
+/**
+ * @}
+ */
 
 #ifdef __cplusplus
 }

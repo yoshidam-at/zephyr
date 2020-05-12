@@ -6,8 +6,8 @@
 
 #include <errno.h>
 #include <device.h>
-#include <uart.h>
-#include <clock_control.h>
+#include <drivers/uart.h>
+#include <drivers/clock_control.h>
 #include <fsl_lpsci.h>
 #include <soc.h>
 
@@ -47,8 +47,8 @@ static void mcux_lpsci_poll_out(struct device *dev, unsigned char c)
 	const struct mcux_lpsci_config *config = dev->config->config_info;
 
 	while (!(LPSCI_GetStatusFlags(config->base)
-		& kLPSCI_TxDataRegEmptyFlag))
-		;
+		& kLPSCI_TxDataRegEmptyFlag)) {
+	}
 
 	LPSCI_WriteByte(config->base, c);
 }
@@ -132,7 +132,7 @@ static int mcux_lpsci_irq_tx_complete(struct device *dev)
 	const struct mcux_lpsci_config *config = dev->config->config_info;
 	u32_t flags = LPSCI_GetStatusFlags(config->base);
 
-	return (flags & kLPSCI_TxDataRegEmptyFlag) != 0;
+	return (flags & kLPSCI_TxDataRegEmptyFlag) != 0U;
 }
 
 static int mcux_lpsci_irq_tx_ready(struct device *dev)
@@ -165,7 +165,7 @@ static int mcux_lpsci_irq_rx_full(struct device *dev)
 	const struct mcux_lpsci_config *config = dev->config->config_info;
 	u32_t flags = LPSCI_GetStatusFlags(config->base);
 
-	return (flags & kLPSCI_RxDataRegFullFlag) != 0;
+	return (flags & kLPSCI_RxDataRegFullFlag) != 0U;
 }
 
 static int mcux_lpsci_irq_rx_ready(struct device *dev)

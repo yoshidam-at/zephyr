@@ -37,6 +37,8 @@
 		gpio-6 = &gpio6;
 		led0 = &red_led;
 		mu-b = &mub;
+		epit-1 = &epit1;
+		epit-2 = &epit2;
 	};
 
 	chosen {
@@ -56,23 +58,31 @@
 };
 
 &uart5 {
-	status = "ok";
+	status = "okay";
 	current-speed = <115200>;
 	modem-mode = <0>;
 };
 
 &gpio4 {
-	status = "ok";
+	status = "okay";
 };
 
 &gpio5 {
-	status = "ok";
+	status = "okay";
 };
 
 &gpio6 {
-	status = "ok";
+	status = "okay";
 };
 
 &mub {
-	status = "ok";
+	status = "okay";
+};
+
+&epit1 {
+	status = "okay";
+};
+
+&epit2 {
+	status = "okay";
 };

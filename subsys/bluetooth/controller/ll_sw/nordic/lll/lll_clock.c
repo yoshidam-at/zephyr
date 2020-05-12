@@ -7,32 +7,30 @@
 #include <zephyr/types.h>
 #include <soc.h>
 #include <device.h>
-#include <clock_control.h>
+#include <drivers/clock_control.h>
 #include <drivers/clock_control/nrf_clock_control.h>
 
 #define LOG_MODULE_NAME bt_ctlr_llsw_nordic_lll_clock
 #include "common/log.h"
 #include "hal/debug.h"
 
-#define DRV_NAME CONFIG_CLOCK_CONTROL_NRF_K32SRC_DRV_NAME
-#define K32SRC   CLOCK_CONTROL_NRF_K32SRC
-
-static u8_t is_k32src_stable;
-
 void lll_clock_wait(void)
 {
-	if (!is_k32src_stable) {
-		struct device *clk_k32;
+	static bool done;
 
-		is_k32src_stable = 1;
+	if (done) {
+		return;
+	}
+	done = true;
 
-		clk_k32 = device_get_binding(DRV_NAME);
-		LL_ASSERT(clk_k32);
+	struct device *lf_clock = device_get_binding(
+		DT_INST_0_NORDIC_NRF_CLOCK_LABEL "_32K");
 
-		while (clock_control_on(clk_k32, (void *)K32SRC)) {
-			DEBUG_CPU_SLEEP(1);
-			k_cpu_idle();
-			DEBUG_CPU_SLEEP(0);
-		}
+	LL_ASSERT(lf_clock);
+
+	while (clock_control_on(lf_clock, (void *)CLOCK_CONTROL_NRF_K32SRC)) {
+		DEBUG_CPU_SLEEP(1);
+		k_cpu_idle();
+		DEBUG_CPU_SLEEP(0);
 	}
 }

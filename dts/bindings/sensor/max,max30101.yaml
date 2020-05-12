@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: MAX30101 heart rate sensor
-version: 0.1
 
 description: >
     This is a representation of the MAX30101 heart rate sensor
@@ -16,5 +15,3 @@ inherits:
 properties:
     compatible:
       constraint: "max,max30101"
-
-...

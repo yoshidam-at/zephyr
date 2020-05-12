@@ -14,9 +14,11 @@
 #include <toolchain.h>
 #include <linker/sections.h>
 #include <arch/cpu.h>
+#include <swap_macros.h>
 
 GDATA(_interrupt_stack)
 GDATA(_main_stack)
+GDATA(_VectorTable)
 
 /* use one of the available interrupt stacks during init */
 
@@ -43,25 +45,56 @@ GTEXT(__start)
 
 SECTION_FUNC(TEXT,__reset)
 SECTION_FUNC(TEXT,__start)
-
 	/* lock interrupts: will get unlocked when switch to main task
 	 * also make sure the processor in the correct status
 	 */
 	mov r0, 0
 	kflag r0
 
+#ifdef CONFIG_ARC_SECURE_FIRMWARE
+	sflag r0
+#endif
+
+#if defined(CONFIG_BOOT_TIME_MEASUREMENT) && defined(CONFIG_ARCV2_TIMER)
+	/*
+	 * ARCV2 timer (timer0) is a free run timer, let it start to count
+	 * here.
+	 */
+	mov r0, 0xffffffff
+	sr r0, [_ARC_V2_TMR0_LIMIT]
+	mov r0, 0
+	sr r0, [_ARC_V2_TMR0_COUNT]
+#endif
 	/* interrupt related init */
+#ifndef CONFIG_ARC_NORMAL_FIRMWARE
+	/* IRQ_ACT and IRQ_CTRL should be initialized and set in secure mode */
 	sr r0, [_ARC_V2_AUX_IRQ_ACT]
 	sr r0, [_ARC_V2_AUX_IRQ_CTRL]
+#endif
 	sr r0, [_ARC_V2_AUX_IRQ_HINT]
 
-	/* \todo: MPU init, gp for small data? */
+	/* set the vector table base early,
+	 * so that exception vectors can be handled.
+	 */
+	mov r0, _VectorTable
+#ifdef CONFIG_ARC_SECURE_FIRMWARE
+	sr r0, [_ARC_V2_IRQ_VECT_BASE_S]
+#else
+	sr r0, [_ARC_V2_IRQ_VECT_BASE]
+#endif
 
-#if CONFIG_USERSPACE
+#if defined(CONFIG_USERSPACE)
 	lr r0, [_ARC_V2_STATUS32]
 	bset r0, r0, _ARC_V2_STATUS32_US_BIT
 	kflag r0
 #endif
+
+#ifdef CONFIG_ARC_USE_UNALIGNED_MEM_ACCESS
+	lr r0, [_ARC_V2_STATUS32]
+	bset r0, r0, _ARC_V2_STATUS32_AD_BIT
+	kflag r0
+#endif
+
 	mov r1, 1
 
 invalidate_and_disable_icache:
@@ -88,9 +121,31 @@ invalidate_dcache:
 
 done_cache_invalidate:
 
-#if defined(CONFIG_SYS_POWER_DEEP_SLEEP) && \
+#if defined(CONFIG_SYS_POWER_DEEP_SLEEP_STATES) && \
 	!defined(CONFIG_BOOTLOADER_CONTEXT_RESTORE)
-        jl @sys_resume_from_deep_sleep
+        jl @_sys_resume_from_deep_sleep
+#endif
+
+#ifdef CONFIG_SMP
+	_get_cpu_id r0
+	breq r0, 0, _master_core_startup
+
+/*
+ * Non-masters wait for master core (core 0) to boot enough
+ */
+_slave_core_wait:
+	ld r1, [arc_cpu_wake_flag]
+	brne r0, r1, _slave_core_wait
+
+	/* signal master core that slave core runs */
+	st 0, [arc_cpu_wake_flag]
+
+	/* get sp set by master core */
+	_get_curr_cpu_irq_stack sp
+
+	j z_arch_slave_start
+
+_master_core_startup:
 #endif
 
 #ifdef CONFIG_INIT_STACKS

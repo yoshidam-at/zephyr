@@ -10,7 +10,7 @@
 
 #include <soc.h>
 #include <device.h>
-#include <clock_control.h>
+#include <drivers/clock_control.h>
 #ifdef CONFIG_CLOCK_CONTROL_NRF
 #include <drivers/clock_control/nrf_clock_control.h>
 #endif
@@ -127,7 +127,7 @@ int ll_init(struct k_sem *sem_rx)
 
 	sem_recv = sem_rx;
 
-	clk_k32 = device_get_binding(CONFIG_CLOCK_CONTROL_NRF_K32SRC_DRV_NAME);
+	clk_k32 = device_get_binding(DT_INST_0_NORDIC_NRF_CLOCK_LABEL "_32K");
 	if (!clk_k32) {
 		return -ENODEV;
 	}
@@ -158,7 +158,7 @@ int ll_init(struct k_sem *sem_rx)
 			  hal_ticker_instance0_trigger_set);
 	LL_ASSERT(!err);
 
-	clk_m16 = device_get_binding(CONFIG_CLOCK_CONTROL_NRF_M16SRC_DRV_NAME);
+	clk_m16 = device_get_binding(DT_INST_0_NORDIC_NRF_CLOCK_LABEL "_16M");
 	if (!clk_m16) {
 		return -ENODEV;
 	}
@@ -175,7 +175,10 @@ int ll_init(struct k_sem *sem_rx)
 		return -ENOMEM;
 	}
 
-	ll_filter_reset(true);
+	/* reset whitelist, resolving list and initialise RPA timeout*/
+	if (IS_ENABLED(CONFIG_BT_CTLR_FILTER)) {
+		ll_filter_reset(true);
+	}
 
 	IRQ_DIRECT_CONNECT(NRF5_IRQ_RADIO_IRQn, CONFIG_BT_CTLR_WORKER_PRIO,
 			   radio_nrf5_isr, 0);

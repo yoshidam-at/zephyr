@@ -14,11 +14,11 @@
 #ifndef ZEPHYR_INCLUDE_ARCH_ARM_CORTEX_M_CMSIS_H_
 #define ZEPHYR_INCLUDE_ARCH_ARM_CORTEX_M_CMSIS_H_
 
+#include <soc.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <soc.h>
 
 /* CP10 Access Bits */
 #define CPACR_CP10_Pos          20U
@@ -92,6 +92,10 @@ typedef enum {
 #error "DT_NUM_IRQ_PRIO_BITS and __NVIC_PRIO_BITS are not set to the same value"
 #endif
 
+#ifdef __cplusplus
+}
+#endif
+
 #if defined(CONFIG_CPU_CORTEX_M0)
 #include <core_cm0.h>
 #elif defined(CONFIG_CPU_CORTEX_M0PLUS)
@@ -108,10 +112,6 @@ typedef enum {
 #include <core_cm33.h>
 #else
 #error "Unknown Cortex-M device"
-#endif
-
-#ifdef __cplusplus
-}
 #endif
 
 #endif /* ZEPHYR_INCLUDE_ARCH_ARM_CORTEX_M_CMSIS_H_ */

@@ -24,8 +24,7 @@ LOG_MODULE_REGISTER(net_tcp, CONFIG_NET_TCP_LOG_LEVEL);
 #include <net/net_pkt.h>
 #include <net/net_ip.h>
 #include <net/net_context.h>
-#include <net/tcp.h>
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 
 #include "connection.h"
 #include "net_private.h"
@@ -173,7 +172,9 @@ static inline u32_t retry_timeout(const struct net_tcp *tcp)
 	 ((IS_ENABLED(CONFIG_NET_L2_BT) &&				\
 	   net_pkt_lladdr_dst(pkt)->type == NET_LINK_BLUETOOTH) ||	\
 	  (IS_ENABLED(CONFIG_NET_L2_IEEE802154) &&			\
-	   net_pkt_lladdr_dst(pkt)->type == NET_LINK_IEEE802154)))
+	   net_pkt_lladdr_dst(pkt)->type == NET_LINK_IEEE802154) ||	\
+	  (IS_ENABLED(CONFIG_NET_L2_CANBUS) &&			\
+	   net_pkt_lladdr_dst(pkt)->type == NET_LINK_CANBUS)))
 
 /* The ref should not be done for Bluetooth and IEEE 802.15.4 which use
  * IPv6 header compression (6lo). For BT and 802.15.4 we copy the pkt
@@ -283,7 +284,7 @@ struct net_tcp *net_tcp_alloc(struct net_context *context)
 	tcp_context[i].context = context;
 
 	tcp_context[i].send_seq = tcp_init_isn();
-	tcp_context[i].recv_wnd = min(NET_TCP_MAX_WIN, NET_TCP_BUF_MAX_LEN);
+	tcp_context[i].recv_wnd = MIN(NET_TCP_MAX_WIN, NET_TCP_BUF_MAX_LEN);
 	tcp_context[i].send_mss = NET_TCP_DEFAULT_MSS;
 
 	tcp_context[i].accept_cb = NULL;
@@ -355,10 +356,10 @@ static int finalize_segment(struct net_pkt *pkt)
 
 	if (IS_ENABLED(CONFIG_NET_IPV4) &&
 	    net_pkt_family(pkt) == AF_INET) {
-		return net_ipv4_finalize_new(pkt, IPPROTO_TCP);
+		return net_ipv4_finalize(pkt, IPPROTO_TCP);
 	} else if (IS_ENABLED(CONFIG_NET_IPV6) &&
 		   net_pkt_family(pkt) == AF_INET6) {
-		return net_ipv6_finalize_new(pkt, IPPROTO_TCP);
+		return net_ipv6_finalize(pkt, IPPROTO_TCP);
 	}
 
 	return -EINVAL;
@@ -440,7 +441,7 @@ static int prepare_segment(struct net_tcp *tcp,
 		goto fail;
 	}
 
-	tcp_hdr = (struct net_tcp_hdr *)net_pkt_get_data_new(pkt, &tcp_access);
+	tcp_hdr = (struct net_tcp_hdr *)net_pkt_get_data(pkt, &tcp_access);
 	if (!tcp_hdr) {
 		status = -ENOBUFS;
 		goto fail;
@@ -465,14 +466,13 @@ static int prepare_segment(struct net_tcp *tcp,
 	tcp_hdr->offset   = (NET_TCPH_LEN + optlen) << 2;
 	tcp_hdr->flags    = segment->flags;
 	sys_put_be16(segment->wnd, tcp_hdr->wnd);
-	tcp_hdr->chksum   = 0;
-	tcp_hdr->urg[0]   = 0;
-	tcp_hdr->urg[1]   = 0;
+	tcp_hdr->chksum   = 0U;
+	tcp_hdr->urg[0]   = 0U;
+	tcp_hdr->urg[1]   = 0U;
 
 	net_pkt_set_data(pkt, &tcp_access);
 
-	if (optlen &&
-	    net_pkt_write_new(pkt, segment->options, segment->optlen)) {
+	if (optlen && net_pkt_write(pkt, segment->options, segment->optlen)) {
 		goto fail;
 	}
 
@@ -819,8 +819,6 @@ int net_tcp_queue_data(struct net_context *context, struct net_pkt *pkt)
 		return -ESHUTDOWN;
 	}
 
-	net_pkt_set_appdatalen(pkt, net_pkt_get_len(pkt));
-
 	/* Set PSH on all packets, our window is so small that there's
 	 * no point in the remote side trying to finesse things and
 	 * coalesce packets.
@@ -877,7 +875,7 @@ int net_tcp_send_pkt(struct net_pkt *pkt)
 		return -EMSGSIZE;
 	}
 
-	tcp_hdr = (struct net_tcp_hdr *)net_pkt_get_data_new(pkt, &tcp_access);
+	tcp_hdr = (struct net_tcp_hdr *)net_pkt_get_data(pkt, &tcp_access);
 	if (!tcp_hdr) {
 		NET_ERR("Packet %p does not contain TCP header", pkt);
 		return -EMSGSIZE;
@@ -885,7 +883,7 @@ int net_tcp_send_pkt(struct net_pkt *pkt)
 
 	if (sys_get_be32(tcp_hdr->ack) != ctx->tcp->send_ack) {
 		sys_put_be32(ctx->tcp->send_ack, tcp_hdr->ack);
-		tcp_hdr->chksum = 0;
+		tcp_hdr->chksum = 0U;
 		calc_chksum = true;
 	}
 
@@ -895,9 +893,9 @@ int net_tcp_send_pkt(struct net_pkt *pkt)
 	 * anyway if we know we need it just to sanify edge cases.
 	 */
 	if (ctx->tcp->sent_ack != ctx->tcp->send_ack &&
-		(tcp_hdr->flags & NET_TCP_ACK) == 0) {
+		(tcp_hdr->flags & NET_TCP_ACK) == 0U) {
 		tcp_hdr->flags |= NET_TCP_ACK;
-		tcp_hdr->chksum = 0;
+		tcp_hdr->chksum = 0U;
 		calc_chksum = true;
 	}
 
@@ -917,7 +915,7 @@ int net_tcp_send_pkt(struct net_pkt *pkt)
 	}
 
 	if (tcp_hdr->flags & NET_TCP_FIN) {
-		ctx->tcp->fin_sent = 1;
+		ctx->tcp->fin_sent = 1U;
 	}
 
 	ctx->tcp->sent_ack = ctx->tcp->send_ack;
@@ -950,7 +948,7 @@ int net_tcp_send_pkt(struct net_pkt *pkt)
 		}
 
 		if (pkt_in_slist) {
-			new_pkt = net_pkt_clone_new(pkt, ALLOC_TIMEOUT);
+			new_pkt = net_pkt_clone(pkt, ALLOC_TIMEOUT);
 			if (!new_pkt) {
 				return -ENOMEM;
 			}
@@ -995,7 +993,7 @@ static void restart_timer(struct net_tcp *tcp)
 }
 
 int net_tcp_send_data(struct net_context *context, net_context_send_cb_t cb,
-		      void *token, void *user_data)
+		      void *user_data)
 {
 	struct net_pkt *pkt;
 
@@ -1031,10 +1029,10 @@ int net_tcp_send_data(struct net_context *context, net_context_send_cb_t cb,
 	 * go over the wire.  In theory it would be nice to track
 	 * specific ACK locations in the stream and make the
 	 * callback at that time, but there's nowhere to store the
-	 * potentially-separate token/user_data values right now.
+	 * user_data value right now.
 	 */
 	if (cb) {
-		cb(context, 0, token, user_data);
+		cb(context, 0, user_data);
 	}
 
 	return 0;
@@ -1077,8 +1075,8 @@ bool net_tcp_ack_received(struct net_context *ctx, u32_t ack)
 			continue;
 		}
 
-		tcp_hdr = (struct net_tcp_hdr *)net_pkt_get_data_new(
-							pkt, &tcp_access);
+		tcp_hdr = (struct net_tcp_hdr *)net_pkt_get_data(pkt,
+								 &tcp_access);
 		if (!tcp_hdr) {
 			/* The pkt does not contain TCP header, this should
 			 * not happen.
@@ -1089,22 +1087,23 @@ bool net_tcp_ack_received(struct net_context *ctx, u32_t ack)
 			continue;
 		}
 
-		seq_len = net_pkt_appdatalen(pkt);
+		net_pkt_acknowledge_data(pkt, &tcp_access);
+		seq_len = net_pkt_remaining_data(pkt);
 
 		/* Each of SYN and FIN flags are counted
 		 * as one sequence number.
 		 */
 		if (tcp_hdr->flags & NET_TCP_SYN) {
-			seq_len += 1;
+			seq_len += 1U;
 		}
 		if (tcp_hdr->flags & NET_TCP_FIN) {
-			seq_len += 1;
+			seq_len += 1U;
 		}
 
 		/* Last sequence number in this packet. */
 		last_seq = sys_get_be32(tcp_hdr->seq) + seq_len - 1;
 
-		/* Ack number should be strictly greater to acknowleged numbers
+		/* Ack number should be strictly greater to acknowledged numbers
 		 * below it. For example, ack no. 10 acknowledges all numbers up
 		 * to and including 9.
 		 */
@@ -1266,119 +1265,23 @@ bool net_tcp_validate_seq(struct net_tcp *tcp, struct net_tcp_hdr *tcp_hdr)
 					+ net_tcp_get_recv_wnd(tcp)) < 0);
 }
 
-struct net_tcp_hdr *net_tcp_get_hdr(struct net_pkt *pkt,
-				    struct net_tcp_hdr *hdr)
-{
-	NET_PKT_DATA_ACCESS_CONTIGUOUS_DEFINE(tcp_access, struct net_tcp_hdr);
-	struct net_pkt_cursor backup;
-	struct net_tcp_hdr *tcp_hdr;
-	bool overwrite;
-
-	tcp_access.data = hdr;
-
-	overwrite = net_pkt_is_being_overwritten(pkt);
-	net_pkt_set_overwrite(pkt, true);
-
-	net_pkt_cursor_backup(pkt, &backup);
-	net_pkt_cursor_init(pkt);
-
-	if (net_pkt_skip(pkt, net_pkt_ip_hdr_len(pkt) +
-			 net_pkt_ipv6_ext_len(pkt))) {
-		tcp_hdr = NULL;
-		goto out;
-	}
-
-	tcp_hdr = (struct net_tcp_hdr *)net_pkt_get_data_new(pkt, &tcp_access);
-
-out:
-	net_pkt_cursor_restore(pkt, &backup);
-	net_pkt_set_overwrite(pkt, overwrite);
-
-	return tcp_hdr;
-}
-
-struct net_tcp_hdr *net_tcp_set_hdr(struct net_pkt *pkt,
-				    struct net_tcp_hdr *hdr)
-{
-	NET_PKT_DATA_ACCESS_DEFINE(tcp_access, struct net_tcp_hdr);
-	struct net_pkt_cursor backup;
-	struct net_tcp_hdr *tcp_hdr;
-	bool overwrite;
-
-	overwrite = net_pkt_is_being_overwritten(pkt);
-	net_pkt_set_overwrite(pkt, true);
-
-	net_pkt_cursor_backup(pkt, &backup);
-	net_pkt_cursor_init(pkt);
-
-	if (net_pkt_skip(pkt, net_pkt_ip_hdr_len(pkt) +
-			 net_pkt_ipv6_ext_len(pkt))) {
-		tcp_hdr = NULL;
-		goto out;
-	}
-
-	tcp_hdr = (struct net_tcp_hdr *)net_pkt_get_data_new(pkt, &tcp_access);
-	if (!tcp_hdr) {
-		goto out;
-	}
-
-	memcpy(tcp_hdr, hdr, sizeof(struct net_tcp_hdr));
-
-	net_pkt_set_data(pkt, &tcp_access);
-out:
-	net_pkt_cursor_restore(pkt, &backup);
-	net_pkt_set_overwrite(pkt, overwrite);
-
-	return tcp_hdr == NULL ? NULL : hdr;
-}
-
 int net_tcp_finalize(struct net_pkt *pkt)
 {
 	NET_PKT_DATA_ACCESS_DEFINE(tcp_access, struct net_tcp_hdr);
 	struct net_tcp_hdr *tcp_hdr;
 
-	tcp_hdr = (struct net_tcp_hdr *)net_pkt_get_data_new(pkt, &tcp_access);
+	tcp_hdr = (struct net_tcp_hdr *)net_pkt_get_data(pkt, &tcp_access);
 	if (!tcp_hdr) {
 		return -ENOBUFS;
 	}
 
-	tcp_hdr->chksum = 0;
-	tcp_hdr->chksum = net_calc_chksum_tcp(pkt);
+	tcp_hdr->chksum = 0U;
 
-	return net_pkt_set_data(pkt, &tcp_access);
-}
-
-struct net_buf *net_tcp_set_chksum(struct net_pkt *pkt, struct net_buf *frag)
-{
-	struct net_tcp_hdr *hdr;
-	u16_t chksum = 0U;
-	u16_t pos;
-
-	hdr = net_pkt_tcp_data(pkt);
-	if (net_tcp_header_fits(pkt, hdr)) {
-		hdr->chksum = 0;
-		hdr->chksum = net_calc_chksum_tcp(pkt);
-
-		return frag;
+	if (net_if_need_calc_tx_checksum(net_pkt_iface(pkt))) {
+		tcp_hdr->chksum = net_calc_chksum_tcp(pkt);
 	}
 
-	/* We need to set the checksum to 0 first before the calc */
-	frag = net_pkt_write(pkt, frag,
-			     net_pkt_ip_hdr_len(pkt) +
-			     net_pkt_ipv6_ext_len(pkt) +
-			     2 + 2 + 4 + 4 + /* src + dst + seq + ack */
-			     1 + 1 + 2 /* offset + flags + wnd */,
-			     &pos, sizeof(chksum), (u8_t *)&chksum,
-			     ALLOC_TIMEOUT);
-
-	chksum = net_calc_chksum_tcp(pkt);
-
-	frag = net_pkt_write(pkt, frag, pos - 2, &pos, sizeof(chksum),
-			     (u8_t *)&chksum, ALLOC_TIMEOUT);
-
-	NET_ASSERT(frag);
-
-	return frag;
+	return net_pkt_set_data(pkt, &tcp_access);
 }
 
 int net_tcp_parse_opts(struct net_pkt *pkt, int opt_totlen,
@@ -1387,7 +1290,7 @@ int net_tcp_parse_opts(struct net_pkt *pkt, int opt_totlen,
 	u8_t opt, optlen;
 
 	while (opt_totlen) {
-		if (net_pkt_read_u8_new(pkt, &opt)) {
+		if (net_pkt_read_u8(pkt, &opt)) {
 			optlen = 0U;
 			goto error;
 		}
@@ -1411,7 +1314,7 @@ int net_tcp_parse_opts(struct net_pkt *pkt, int opt_totlen,
 			goto error;
 		}
 
-		if (net_pkt_read_u8_new(pkt, &optlen) || optlen < 2) {
+		if (net_pkt_read_u8(pkt, &optlen) || optlen < 2) {
 			goto error;
 		}
 
@@ -1420,18 +1323,18 @@ int net_tcp_parse_opts(struct net_pkt *pkt, int opt_totlen,
 		/* Subtract opt/optlen size now to avoid doing this
 		 * repeatedly.
 		 */
-		optlen -= 2;
+		optlen -= 2U;
 		if (opt_totlen < optlen) {
 			goto error;
 		}
 
 		switch (opt) {
 		case NET_TCP_MSS_OPT:
-			if (optlen != 2) {
+			if (optlen != 2U) {
 				goto error;
 			}
 
-			if (net_pkt_read_be16_new(pkt, &opts->mss)) {
+			if (net_pkt_read_be16(pkt, &opts->mss)) {
 				goto error;
 			}
 
@@ -1452,26 +1355,6 @@ int net_tcp_parse_opts(struct net_pkt *pkt, int opt_totlen,
 error:
 	NET_ERR("Invalid TCP opt: %d len: %d", opt, optlen);
 	return -EINVAL;
-}
-
-int tcp_hdr_len(struct net_pkt *pkt)
-{
-	NET_PKT_DATA_ACCESS_DEFINE(tcp_access, struct net_tcp_hdr);
-	struct net_tcp_hdr *tcp_hdr;
-
-	net_pkt_cursor_init(pkt);
-
-	if (net_pkt_skip(pkt, net_pkt_ip_hdr_len(pkt) +
-			 net_pkt_ipv6_ext_len(pkt))) {
-		return 0;
-	}
-
-	tcp_hdr = (struct net_tcp_hdr *)net_pkt_get_data_new(pkt, &tcp_access);
-	if (tcp_hdr) {
-		return NET_TCP_HDR_LEN(tcp_hdr);
-	}
-
-	return 0;
 }
 
 int net_tcp_recv(struct net_context *context, net_context_recv_cb_t cb,
@@ -1503,11 +1386,6 @@ static void queue_fin(struct net_context *ctx)
 	}
 
 	net_tcp_queue_pkt(ctx, pkt);
-
-	ret = net_tcp_send_pkt(pkt);
-	if (ret < 0) {
-		net_pkt_unref(pkt);
-	}
 }
 
 int net_tcp_put(struct net_context *context)
@@ -1887,7 +1765,7 @@ static void print_send_info(struct net_pkt *pkt,
 			    const char *msg, const struct sockaddr *remote)
 {
 	if (CONFIG_NET_TCP_LOG_LEVEL >= LOG_LEVEL_DBG) {
-		u16_t port = 0;
+		u16_t port = 0U;
 
 		if (IS_ENABLED(CONFIG_NET_IPV4) &&
 		    net_pkt_family(pkt) == AF_INET) {
@@ -2006,6 +1884,24 @@ static int send_reset(struct net_context *context,
 	}
 
 	return ret;
+}
+
+static u16_t adjust_data_len(struct net_pkt *pkt, struct net_tcp_hdr *tcp_hdr,
+			     u16_t data_len)
+{
+	u8_t offset = tcp_hdr->offset >> 4;
+
+	/* We need to adjust the length of the data part if there
+	 * are TCP options.
+	 */
+	if ((offset << 2) > sizeof(struct net_tcp_hdr)) {
+		net_pkt_skip(pkt, (offset << 2) -
+			     sizeof(struct net_tcp_hdr));
+
+		data_len -= (offset << 2) - sizeof(struct net_tcp_hdr);
+	}
+
+	return data_len;
 }
 
 /* This is called when we receive data after the connection has been
@@ -2139,12 +2035,10 @@ resend_ack:
 			net_tcp_change_state(context->tcp, NET_TCP_TIME_WAIT);
 		}
 
-		context->tcp->fin_rcvd = 1;
+		context->tcp->fin_rcvd = 1U;
 	}
 
-	net_pkt_set_appdata_values(pkt, IPPROTO_TCP);
-
-	data_len = net_pkt_appdatalen(pkt);
+	data_len = net_pkt_remaining_data(pkt);
 	if (data_len > net_tcp_get_recv_wnd(context->tcp)) {
 		/* In case we have zero window, we should still accept
 		 * Zero Window Probes from peer, which per convention
@@ -2154,7 +2048,7 @@ resend_ack:
 		 * then net_tcp_get_recv_wnd(context->tcp) can be only 0
 		 * here.
 		 */
-		if (data_len == 1) {
+		if (data_len == 1U) {
 			goto resend_ack;
 		}
 
@@ -2165,20 +2059,22 @@ resend_ack:
 		goto unlock;
 	}
 
-	/* If the pkt has appdata, notify the recv callback which should
+	/* If the pkt has data, notify the recv callback which should
 	 * release the pkt. Otherwise, release the pkt immediately.
 	 */
 	if (data_len > 0) {
+		data_len = adjust_data_len(pkt, tcp_hdr, data_len);
+
 		ret = net_context_packet_received(conn, pkt, ip_hdr, proto_hdr,
 						  context->tcp->recv_user_data);
-	} else if (data_len == 0) {
+	} else if (data_len == 0U) {
 		net_pkt_unref(pkt);
 	}
 
 	/* Increment the ack */
 	context->tcp->send_ack += data_len;
 	if (tcp_flags & NET_TCP_FIN) {
-		context->tcp->send_ack += 1;
+		context->tcp->send_ack += 1U;
 	}
 
 	send_ack(context, &conn->remote_addr, false);
@@ -2274,7 +2170,8 @@ NET_CONN_CB(tcp_synack_received)
 
 		net_tcp_unregister(context->conn_handler);
 
-		ret = net_tcp_register(&remote_addr,
+		ret = net_tcp_register(net_pkt_family(pkt),
+				       &remote_addr,
 				       &local_addr,
 				       ntohs(tcp_hdr->src_port),
 				       ntohs(tcp_hdr->dst_port),
@@ -2457,7 +2354,7 @@ NET_CONN_CB(tcp_syn_rcvd)
 	/*
 	 * If we receive ACK, we go to ESTABLISHED state.
 	 */
-	if (NET_TCP_FLAGS(tcp_hdr) == NET_TCP_ACK) {
+	if (NET_TCP_FLAGS(tcp_hdr) & NET_TCP_ACK) {
 		struct net_context *new_context;
 		socklen_t addrlen;
 		int ret;
@@ -2503,7 +2400,8 @@ NET_CONN_CB(tcp_syn_rcvd)
 		memcpy(&new_context->remote, &remote_addr,
 		       sizeof(remote_addr));
 
-		ret = net_tcp_register(&new_context->remote,
+		ret = net_tcp_register(net_pkt_family(pkt),
+			       &new_context->remote,
 			       &local_addr,
 			       ntohs(net_sin(&new_context->remote)->sin_port),
 			       ntohs(net_sin(&local_addr)->sin_port),
@@ -2580,6 +2478,14 @@ int net_tcp_accept(struct net_context *context,
 		return -EINVAL;
 	}
 
+	if (cb == NULL) {
+		/* The context is being shut down */
+		if (net_context_get_ip_proto(context) == IPPROTO_TCP) {
+			context->tcp->accept_cb = NULL;
+			return 0;
+		}
+	}
+
 	local_addr.sa_family = net_context_get_family(context);
 
 #if defined(CONFIG_NET_IPV6)
@@ -2610,7 +2516,8 @@ int net_tcp_accept(struct net_context *context,
 	}
 #endif /* CONFIG_NET_IPV4 */
 
-	ret = net_tcp_register(context->flags & NET_CONTEXT_REMOTE_ADDR_SET ?
+	ret = net_tcp_register(net_context_get_family(context),
+			       context->flags & NET_CONTEXT_REMOTE_ADDR_SET ?
 			       &context->remote : NULL,
 			       laddr,
 			       ntohs(net_sin(&context->remote)->sin_port),
@@ -2652,7 +2559,8 @@ int net_tcp_connect(struct net_context *context,
 	/* We need to register a handler, otherwise the SYN-ACK
 	 * packet would not be received.
 	 */
-	ret = net_tcp_register(addr,
+	ret = net_tcp_register(net_context_get_family(context),
+			       addr,
 			       laddr,
 			       ntohs(rport),
 			       ntohs(lport),
@@ -2685,12 +2593,12 @@ struct net_tcp_hdr *net_tcp_input(struct net_pkt *pkt,
 
 	if (IS_ENABLED(CONFIG_NET_TCP_CHECKSUM) &&
 	    net_if_need_calc_rx_checksum(net_pkt_iface(pkt)) &&
-	    net_calc_chksum_tcp(pkt) != 0) {
+	    net_calc_chksum_tcp(pkt) != 0U) {
 		NET_DBG("DROP: checksum mismatch");
 		goto drop;
 	}
 
-	tcp_hdr = (struct net_tcp_hdr *)net_pkt_get_data_new(pkt, tcp_access);
+	tcp_hdr = (struct net_tcp_hdr *)net_pkt_get_data(pkt, tcp_access);
 	if (tcp_hdr && !net_pkt_set_data(pkt, tcp_access)) {
 		return tcp_hdr;
 	}

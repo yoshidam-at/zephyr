@@ -15,5 +15,8 @@ supported:
   - gpio
   - usb_device
   - watchdog
+  - hwinfo
+  - can
+  - pwm
 testing:
   default: true

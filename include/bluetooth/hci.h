@@ -12,7 +12,8 @@
 #include <zephyr/types.h>
 #include <stdbool.h>
 #include <string.h>
-#include <misc/util.h>
+#include <sys/util.h>
+#include <net/buf.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,6 +30,7 @@ extern "C" {
 /* Special own address types for LL privacy (used in adv & scan parameters) */
 #define BT_HCI_OWN_ADDR_RPA_OR_PUBLIC  0x02
 #define BT_HCI_OWN_ADDR_RPA_OR_RANDOM  0x03
+#define BT_HCI_OWN_ADDR_RPA_MASK       0x02
 
 /** Bluetooth Device Address */
 typedef struct {
@@ -106,7 +108,7 @@ static inline bool bt_addr_le_is_identity(const bt_addr_le_t *addr)
 #define BT_HCI_ERR_UNKNOWN_CONN_ID              0x02
 #define BT_HCI_ERR_HW_FAILURE                   0x03
 #define BT_HCI_ERR_PAGE_TIMEOUT                 0x04
-#define BT_HCI_ERR_AUTHENTICATION_FAIL          0x05
+#define BT_HCI_ERR_AUTH_FAIL                    0x05
 #define BT_HCI_ERR_PIN_OR_KEY_MISSING           0x06
 #define BT_HCI_ERR_MEM_CAPACITY_EXCEEDED        0x07
 #define BT_HCI_ERR_CONN_TIMEOUT                 0x08
@@ -139,6 +141,8 @@ static inline bool bt_addr_le_is_identity(const bt_addr_le_t *addr)
 #define BT_HCI_ERR_TERM_DUE_TO_MIC_FAIL         0x3d
 #define BT_HCI_ERR_CONN_FAIL_TO_ESTAB           0x3e
 
+#define BT_HCI_ERR_AUTHENTICATION_FAIL __DEPRECATED_MACRO BT_HCI_ERR_AUTH_FAIL
+
 /* EIR/AD data type definitions */
 #define BT_DATA_FLAGS                   0x01 /* AD flags */
 #define BT_DATA_UUID16_SOME             0x02 /* 16-bit UUID, more available */
@@ -150,13 +154,19 @@ static inline bool bt_addr_le_is_identity(const bt_addr_le_t *addr)
 #define BT_DATA_NAME_SHORTENED          0x08 /* Shortened name */
 #define BT_DATA_NAME_COMPLETE           0x09 /* Complete name */
 #define BT_DATA_TX_POWER                0x0a /* Tx Power */
+#define BT_DATA_SM_TK_VALUE             0x10 /* Security Manager TK Value */
+#define BT_DATA_SM_OOB_FLAGS            0x11 /* Security Manager OOB Flags */
 #define BT_DATA_SOLICIT16               0x14 /* Solicit UUIDs, 16-bit */
 #define BT_DATA_SOLICIT128              0x15 /* Solicit UUIDs, 128-bit */
 #define BT_DATA_SVC_DATA16              0x16 /* Service data, 16-bit UUID */
 #define BT_DATA_GAP_APPEARANCE          0x19 /* GAP appearance */
+#define BT_DATA_LE_BT_DEVICE_ADDRESS    0x1b /* LE Bluetooth Device Address */
+#define BT_DATA_LE_ROLE                 0x1c /* LE Role */
 #define BT_DATA_SOLICIT32               0x1f /* Solicit UUIDs, 32-bit */
 #define BT_DATA_SVC_DATA32              0x20 /* Service data, 32-bit UUID */
 #define BT_DATA_SVC_DATA128             0x21 /* Service data, 128-bit UUID */
+#define BT_DATA_LE_SC_CONFIRM_VALUE     0x22 /* LE SC Confirmation Value */
+#define BT_DATA_LE_SC_RANDOM_VALUE      0x23 /* LE SC Random Value */
 #define BT_DATA_URI                     0x24 /* URI */
 #define BT_DATA_MESH_PROV               0x29 /* Mesh Provisioning PDU */
 #define BT_DATA_MESH_MESSAGE            0x2a /* Mesh Networking PDU */
@@ -335,6 +345,9 @@ struct bt_hci_cmd_hdr {
 
 /* Construct OpCode from OGF and OCF */
 #define BT_OP(ogf, ocf)                         ((ocf) | ((ogf) << 10))
+
+/* Invalid opcode */
+#define BT_OP_NOP				0x0000
 
 /* Obtain OGF from OpCode */
 #define BT_OGF(opcode)                          (((opcode) >> 10) & BIT_MASK(6))
@@ -697,6 +710,9 @@ struct bt_hci_rp_read_rssi {
 	s8_t  rssi;
 } __packed;
 
+#define BT_HCI_ENCRYPTION_KEY_SIZE_MIN          7
+#define BT_HCI_ENCRYPTION_KEY_SIZE_MAX          16
+
 #define BT_HCI_OP_READ_ENCRYPTION_KEY_SIZE      BT_OP(BT_OGF_STATUS, 0x0008)
 struct bt_hci_cp_read_encryption_key_size {
 	u16_t handle;
@@ -741,6 +757,11 @@ struct bt_hci_cp_le_set_random_address {
 /* Needed in advertising reports when getting info about */
 #define BT_LE_ADV_SCAN_RSP                      0x04
 
+#define BT_LE_ADV_FP_NO_WHITELIST               0x00
+#define BT_LE_ADV_FP_WHITELIST_SCAN_REQ         0x01
+#define BT_LE_ADV_FP_WHITELIST_CONN_IND         0x02
+#define BT_LE_ADV_FP_WHITELIST_BOTH             0x03
+
 #define BT_HCI_OP_LE_SET_ADV_PARAM              BT_OP(BT_OGF_LE, 0x0006)
 struct bt_hci_cp_le_set_adv_param {
 	u16_t        min_interval;
@@ -783,6 +804,9 @@ struct bt_hci_cp_le_set_adv_enable {
 #define BT_HCI_LE_SCAN_PASSIVE                  0x00
 #define BT_HCI_LE_SCAN_ACTIVE                   0x01
 
+#define BT_HCI_LE_SCAN_FP_NO_WHITELIST          0x00
+#define BT_HCI_LE_SCAN_FP_USE_WHITELIST         0x01
+
 struct bt_hci_cp_le_set_scan_param {
 	u8_t  scan_type;
 	u16_t interval;
@@ -805,6 +829,10 @@ struct bt_hci_cp_le_set_scan_enable {
 } __packed;
 
 #define BT_HCI_OP_LE_CREATE_CONN                BT_OP(BT_OGF_LE, 0x000d)
+
+#define BT_HCI_LE_CREATE_CONN_FP_DIRECT         0x00
+#define BT_HCI_LE_CREATE_CONN_FP_WHITELIST      0x01
+
 struct bt_hci_cp_le_create_conn {
 	u16_t        scan_interval;
 	u16_t        scan_window;
@@ -1351,6 +1379,7 @@ struct bt_hci_cp_le_set_privacy_mode {
 
 /* Event definitions */
 
+#define BT_HCI_EVT_UNKNOWN                      0x00
 #define BT_HCI_EVT_VENDOR                       0xff
 
 #define BT_HCI_EVT_INQUIRY_COMPLETE             0x01
@@ -1903,6 +1932,28 @@ int bt_hci_cmd_send(u16_t opcode, struct net_buf *buf);
   */
 int bt_hci_cmd_send_sync(u16_t opcode, struct net_buf *buf,
 			 struct net_buf **rsp);
+
+/** @typedef bt_hci_vnd_evt_cb_t
+  * @brief Callback type for vendor handling of HCI Vendor-Specific Events.
+  *
+  * A function of this type is registered with bt_hci_register_vnd_evt_cb()
+  * and will be called for any HCI Vendor-Specific Event.
+  *
+  * @param buf Buffer containing event parameters.
+  *
+  * @return true if the function handles the event or false to defer the
+  *         handling of this event back to the stack.
+  */
+typedef bool bt_hci_vnd_evt_cb_t(struct net_buf_simple *buf);
+
+/** Register user callback for HCI Vendor-Specific Events
+  *
+  * @param cb Callback to be called when the stack receives a
+  *           HCI Vendor-Specific Event.
+  *
+  * @return 0 on success or negative error value on failure.
+  */
+int bt_hci_register_vnd_evt_cb(bt_hci_vnd_evt_cb_t cb);
 
 #ifdef __cplusplus
 }

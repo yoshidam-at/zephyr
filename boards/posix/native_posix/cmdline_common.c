@@ -121,7 +121,7 @@ void cmd_read_option_value(const char *str, void *dest, const char type,
 			   const char *option)
 {
 	int error = 0;
-	char *endptr;
+	char *endptr = NULL;
 
 	switch (type) {
 	case 'b':
@@ -162,10 +162,11 @@ void cmd_read_option_value(const char *str, void *dest, const char type,
 		break;
 	default:
 		posix_print_error_and_exit(CMD_TYPE_ERROR, type);
+		/* Unreachable */
 		break;
 	}
 
-	if (!error && *endptr != 0) {
+	if (!error && endptr && *endptr != 0) {
 		error = 1;
 	}
 
@@ -350,6 +351,8 @@ void cmd_print_long_help(struct args_struct_t args_struct[])
 		count++;
 	}
 	fprintf(stdout, "\n");
+	fprintf(stdout, "Note that which options are available depends on the "
+		"enabled features/drivers\n\n");
 }
 
 /*

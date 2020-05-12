@@ -6,11 +6,11 @@
 #include <errno.h>
 
 #include <device.h>
-#if defined(CONFIG_IOAPIC) || defined(CONFIG_MVIC)
-#include <ioapic.h>
+#if defined(CONFIG_IOAPIC)
+#include <drivers/interrupt_controller/ioapic.h>
 #endif
-#include <uart.h>
-#include <power.h>
+#include <drivers/uart.h>
+#include <power/power.h>
 
 #include "qm_uart.h"
 #include "qm_isr.h"
@@ -20,10 +20,10 @@
 
 #define IIR_IID_NO_INTERRUPT_PENDING 0x01
 
-#define DIVISOR_LOW(baudrate) \
-	((CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / (16 * baudrate)) & 0xFF)
-#define DIVISOR_HIGH(baudrate) \
-	(((CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / (16 * baudrate)) & 0xFF00) >> 8)
+#define DIVISOR_LOW(clock, baudrate) \
+	((clock / (16 * baudrate)) & 0xFF)
+#define DIVISOR_HIGH(clock, baudrate) \
+	(((clock / (16 * baudrate)) & 0xFF00) >> 8)
 
 /* Convenient macro to get the controller instance. */
 #define GET_CONTROLLER_INSTANCE(dev) \
@@ -33,6 +33,7 @@
 struct uart_qmsi_config_info {
 	qm_uart_t instance;
 	clk_periph_t clock_gate;
+	u32_t clock_frequency;
 	u32_t baud_divisor;
 	bool hw_fc;
 
@@ -110,20 +111,25 @@ static int uart_resume_device_from_suspend(struct device *dev)
 * the *context may include IN data or/and OUT data
 */
 static int uart_qmsi_device_ctrl(struct device *dev, u32_t ctrl_command,
-				 void *context)
+				 void *context, device_pm_cb cb, void *arg)
 {
+	int ret = 0;
+
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
 		if (*((u32_t *)context) == DEVICE_PM_SUSPEND_STATE) {
-			return uart_suspend_device(dev);
+			ret = uart_suspend_device(dev);
 		} else if (*((u32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
-			return uart_resume_device_from_suspend(dev);
+			ret = uart_resume_device_from_suspend(dev);
 		}
 	} else if (ctrl_command == DEVICE_PM_GET_POWER_STATE) {
 		*((u32_t *)context) = uart_qmsi_get_power_state(dev);
-		return 0;
 	}
 
-	return 0;
+	if (cb) {
+		cb(dev, ret, context, arg);
+	}
+
+	return ret;
 }
 #endif /* CONFIG_DEVICE_POWER_MANAGEMENT */
 
@@ -135,9 +141,12 @@ static void irq_config_func_0(struct device *dev);
 static const struct uart_qmsi_config_info config_info_0 = {
 	.instance = QM_UART_0,
 	.clock_gate = CLK_PERIPH_UARTA_REGISTER | CLK_PERIPH_CLK,
+	.clock_frequency = DT_UART_QMSI_0_CLOCK_FREQUENCY,
 	.baud_divisor = QM_UART_CFG_BAUD_DL_PACK(
-				DIVISOR_HIGH(DT_UART_QMSI_0_BAUDRATE),
-				DIVISOR_LOW(DT_UART_QMSI_0_BAUDRATE),
+				DIVISOR_HIGH(DT_UART_QMSI_0_CLOCK_FREQUENCY,
+					     DT_UART_QMSI_0_BAUDRATE),
+				DIVISOR_LOW(DT_UART_QMSI_0_CLOCK_FREQUENCY,
+					    DT_UART_QMSI_0_BAUDRATE),
 				0),
 #ifdef CONFIG_UART_QMSI_0_HW_FC
 	.hw_fc = true,
@@ -163,9 +172,12 @@ static void irq_config_func_1(struct device *dev);
 static const struct uart_qmsi_config_info config_info_1 = {
 	.instance = QM_UART_1,
 	.clock_gate = CLK_PERIPH_UARTB_REGISTER | CLK_PERIPH_CLK,
+	.clock_frequency = DT_UART_QMSI_1_CLOCK_FREQUENCY,
 	.baud_divisor = QM_UART_CFG_BAUD_DL_PACK(
-				DIVISOR_HIGH(DT_UART_QMSI_1_BAUDRATE),
-				DIVISOR_LOW(DT_UART_QMSI_1_BAUDRATE),
+				DIVISOR_HIGH(DT_UART_QMSI_1_CLOCK_FREQUENCY,
+					     DT_UART_QMSI_1_BAUDRATE),
+				DIVISOR_LOW(DT_UART_QMSI_1_CLOCK_FREQUENCY,
+					    DT_UART_QMSI_1_BAUDRATE),
 				0),
 #ifdef CONFIG_UART_QMSI_1_HW_FC
 	.hw_fc = true,
@@ -375,7 +387,7 @@ static void irq_config_func_0(struct device *dev)
 	ARG_UNUSED(dev);
 
 	IRQ_CONNECT(DT_UART_QMSI_0_IRQ,
-		    CONFIG_UART_QMSI_0_IRQ_PRI, uart_qmsi_isr,
+		    DT_UART_QMSI_0_IRQ_PRI, uart_qmsi_isr,
 		    DEVICE_GET(uart_0), DT_UART_QMSI_0_IRQ_FLAGS);
 	irq_enable(DT_UART_QMSI_0_IRQ);
 	QM_IR_UNMASK_INTERRUPTS(QM_INTERRUPT_ROUTER->uart_0_int_mask);
@@ -388,7 +400,7 @@ static void irq_config_func_1(struct device *dev)
 	ARG_UNUSED(dev);
 
 	IRQ_CONNECT(DT_UART_QMSI_1_IRQ,
-		    CONFIG_UART_QMSI_1_IRQ_PRI, uart_qmsi_isr,
+		    DT_UART_QMSI_1_IRQ_PRI, uart_qmsi_isr,
 		    DEVICE_GET(uart_1), DT_UART_QMSI_1_IRQ_FLAGS);
 	irq_enable(DT_UART_QMSI_1_IRQ);
 	QM_IR_UNMASK_INTERRUPTS(QM_INTERRUPT_ROUTER->uart_1_int_mask);
@@ -400,13 +412,16 @@ static void irq_config_func_1(struct device *dev)
 static int uart_qmsi_line_ctrl_set(struct device *dev, u32_t ctrl, u32_t val)
 {
 	qm_uart_t instance = GET_CONTROLLER_INSTANCE(dev);
+	const struct uart_qmsi_config_info *config = dev->config->config_info;
 	qm_uart_config_t cfg;
 
 	switch (ctrl) {
 	case LINE_CTRL_BAUD_RATE:
 		cfg.line_control = QM_UART[instance]->lcr;
-		cfg.baud_divisor = QM_UART_CFG_BAUD_DL_PACK(DIVISOR_HIGH(val),
-							    DIVISOR_LOW(val), 0);
+		cfg.baud_divisor = QM_UART_CFG_BAUD_DL_PACK(
+				   DIVISOR_HIGH(config->clock_frequency, val),
+				   DIVISOR_LOW(config->clock_frequency, val),
+				   0);
 		if (cfg.baud_divisor == 0) {
 			return -EINVAL;
 		}

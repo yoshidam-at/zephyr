@@ -4,17 +4,17 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * I2C Driver for: STM32F0, STM32F3, STM32F7, STM32L0 and STM32L4
+ * I2C Driver for: STM32F0, STM32F3, STM32F7, STM32L0, STM32L4 and STM32WB
  *
  */
 
 #include <clock_control/stm32_clock_control.h>
-#include <clock_control.h>
-#include <misc/util.h>
+#include <drivers/clock_control.h>
+#include <sys/util.h>
 #include <kernel.h>
 #include <soc.h>
 #include <errno.h>
-#include <i2c.h>
+#include <drivers/i2c.h>
 #include "i2c_ll_stm32.h"
 
 #define LOG_LEVEL CONFIG_I2C_LOG_LEVEL
@@ -195,7 +195,7 @@ int i2c_stm32_slave_register(struct device *dev,
 		return -EBUSY;
 	}
 
-	bitrate_cfg = _i2c_map_dt_bitrate(cfg->bitrate);
+	bitrate_cfg = i2c_map_dt_bitrate(cfg->bitrate);
 
 	ret = i2c_stm32_runtime_configure(dev, bitrate_cfg);
 	if (ret < 0) {
@@ -245,6 +245,8 @@ int i2c_stm32_slave_unregister(struct device *dev,
 	LL_I2C_ClearFlag_ADDR(i2c);
 
 	LL_I2C_Disable(i2c);
+
+	data->slave_attached = false;
 
 	LOG_DBG("i2c: slave unregistered");
 
@@ -475,28 +477,33 @@ static inline int check_errors(struct device *dev, const char *funcname)
 	if (LL_I2C_IsActiveFlag_NACK(i2c)) {
 		LL_I2C_ClearFlag_NACK(i2c);
 		LOG_DBG("%s: NACK", funcname);
-		return -EIO;
+		goto error;
 	}
 
 	if (LL_I2C_IsActiveFlag_ARLO(i2c)) {
 		LL_I2C_ClearFlag_ARLO(i2c);
 		LOG_DBG("%s: ARLO", funcname);
-		return -EIO;
+		goto error;
 	}
 
 	if (LL_I2C_IsActiveFlag_OVR(i2c)) {
 		LL_I2C_ClearFlag_OVR(i2c);
 		LOG_DBG("%s: OVR", funcname);
-		return -EIO;
+		goto error;
 	}
 
 	if (LL_I2C_IsActiveFlag_BERR(i2c)) {
 		LL_I2C_ClearFlag_BERR(i2c);
 		LOG_DBG("%s: BERR", funcname);
-		return -EIO;
+		goto error;
 	}
 
 	return 0;
+error:
+	if (LL_I2C_IsEnabledReloadMode(i2c)) {
+		LL_I2C_DisableReloadMode(i2c);
+	}
+	return -EIO;
 }
 
 static inline int msg_done(struct device *dev, unsigned int current_msg_flags)
@@ -514,8 +521,8 @@ static inline int msg_done(struct device *dev, unsigned int current_msg_flags)
 	if (current_msg_flags & I2C_MSG_STOP) {
 		LL_I2C_GenerateStopCondition(i2c);
 		while (!LL_I2C_IsActiveFlag_STOP(i2c)) {
-			;
 		}
+
 		LL_I2C_ClearFlag_STOP(i2c);
 		LL_I2C_DisableReloadMode(i2c);
 	}
@@ -631,7 +638,7 @@ int stm32_i2c_configure_timing(struct device *dev, u32_t clock)
 		break;
 	} while (presc < 16);
 
-	if (presc >= 16) {
+	if (presc >= 16U) {
 		LOG_DBG("I2C:failed to find prescaler value");
 		return -EINVAL;
 	}

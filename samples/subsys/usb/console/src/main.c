@@ -5,15 +5,15 @@
  */
 
 #include <zephyr.h>
-#include <misc/printk.h>
-#include <misc/util.h>
+#include <sys/printk.h>
+#include <sys/util.h>
 #include <string.h>
 
 void main(void)
 {
 	if (strlen(CONFIG_UART_CONSOLE_ON_DEV_NAME) !=
-	    strlen(CONFIG_CDC_ACM_PORT_NAME) ||
-	    strncmp(CONFIG_UART_CONSOLE_ON_DEV_NAME, CONFIG_CDC_ACM_PORT_NAME,
+	    strlen("CDC_ACM_0") ||
+	    strncmp(CONFIG_UART_CONSOLE_ON_DEV_NAME, "CDC_ACM_0",
 		    strlen(CONFIG_UART_CONSOLE_ON_DEV_NAME))) {
 		printk("Error: Console device name is not USB ACM\n");
 

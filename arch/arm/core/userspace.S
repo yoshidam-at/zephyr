@@ -16,8 +16,8 @@
 
 _ASM_FILE_PROLOGUE
 
-GTEXT(_arm_userspace_enter)
-GTEXT(_arm_do_syscall)
+GTEXT(z_arm_userspace_enter)
+GTEXT(z_arm_do_syscall)
 GTEXT(z_arch_user_string_nlen)
 GTEXT(z_arch_user_string_nlen_fault_start)
 GTEXT(z_arch_user_string_nlen_fault_end)
@@ -36,17 +36,14 @@ GDATA(_k_syscall_table)
  * not transition back later, unless they are doing system calls.
  *
  */
-SECTION_FUNC(TEXT,_arm_userspace_enter)
+SECTION_FUNC(TEXT,z_arm_userspace_enter)
     /* move user_entry to lr */
     mov lr, r0
 
-#if defined (CONFIG_ARM_MPU)
-    /* Re-program dynamic memory map */
-    push {r1,r2,r3,ip,lr}
-    ldr r0, =_kernel
-    ldr r0, [r0, #_kernel_offset_to_current]
-    bl _arch_configure_dynamic_mpu_regions
-    pop {r1,r2,r3,ip,lr}
+#if defined(CONFIG_BUILTIN_STACK_GUARD)
+    /* clear stack pointer limit before setting the PSP */
+    mov r0, #0
+    msr PSPLIM, r0
 #endif
 
     /* set stack to privileged stack */
@@ -55,14 +52,6 @@ SECTION_FUNC(TEXT,_arm_userspace_enter)
     ldr r0, [r0, #_thread_offset_to_priv_stack_start]    /* priv stack ptr */
     ldr ip, =CONFIG_PRIVILEGED_STACK_SIZE
     add r0, r0, ip
-
-#if defined(CONFIG_BUILTIN_STACK_GUARD)
-    /* clear stack pointer limit before setting the PSP */
-    push {r3}
-    mov r3, #0
-    msr PSPLIM, r3
-    pop {r3}
-#endif
 
     mov ip, sp
     msr PSP, r0
@@ -75,14 +64,32 @@ SECTION_FUNC(TEXT,_arm_userspace_enter)
     msr PSPLIM, r0
 #endif
 
+#if defined (CONFIG_ARM_MPU)
+    /* Re-program dynamic memory map.
+     *
+     * Important note:
+     * z_arch_configure_dynamic_mpu_regions() may re-program the MPU Stack Guard
+     * to guard the privilege stack for overflows (if building with option
+     * CONFIG_MPU_STACK_GUARD). There is a risk of actually overflowing the
+     * stack while doing the re-programming. We minimize the risk by placing
+     * this function immediately after we have switched to the privileged stack
+     * so that the whole stack area is available for this critical operation.
+     *
+     * Note that the risk for overflow is higher if using the normal thread
+     * stack, since we do not control how much stack is actually left, when
+     * user invokes z_arm_userspace_enter().
+     */
+    push {r0,r1,r2,r3,ip,lr}
+    ldr r0, =_kernel
+    ldr r0, [r0, #_kernel_offset_to_current]
+    bl z_arch_configure_dynamic_mpu_regions
+    pop {r0,r1,r2,r3,ip,lr}
+#endif
+
     /* load up stack info from user stack */
     ldr r0, [ip]
     ldr ip, [ip, #4]
 
-#ifdef CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT
-    /* Guard is taken out of size, so adjust beginning and size of stack */
-    subs ip, #MPU_GUARD_ALIGN_AND_SIZE
-#endif
 
     /* push args to stack */
     push {r0,r1,r2,r3,ip,lr}
@@ -131,8 +138,16 @@ SECTION_FUNC(TEXT,_arm_userspace_enter)
 #endif /* CONFIG_EXECUTION_BENCHMARKING */
 
     /* change processor mode to unprivileged */
+    push {r0, r1}
+    ldr r0, =_kernel
+    ldr r0, [r0, #_kernel_offset_to_current]
+    ldr r1, [r0, #_thread_offset_to_mode]
+    orrs r1, r1, #1
     mrs ip, CONTROL
     orrs ip, ip, #1
+    /* Store (unprivileged) mode in thread's mode state variable */
+    str r1, [r0, #_thread_offset_to_mode]
+    dsb
     msr CONTROL, ip
 
     /* ISB is not strictly necessary here (stack pointer is not being
@@ -140,9 +155,10 @@ SECTION_FUNC(TEXT,_arm_userspace_enter)
      * instructions with the previous privilege.
      */
     isb
+    pop {r0, r1}
 
-    /* jump to _thread_entry entry */
-    ldr ip, =_thread_entry
+    /* jump to z_thread_entry entry */
+    ldr ip, =z_thread_entry
     bx ip
 
 /**
@@ -157,7 +173,45 @@ SECTION_FUNC(TEXT,_arm_userspace_enter)
  * 4) Restoring stack and calling back to the caller of the SVC
  *
  */
-SECTION_FUNC(TEXT, _arm_do_syscall)
+SECTION_FUNC(TEXT, z_arm_do_syscall)
+
+    /* The function is executing in privileged mode. This implies that we
+     * shall not be allowed to use the thread's default unprivileged stack,
+     * (i.e push to or pop from it), to avoid a possible stack corruption.
+     *
+     * Rationale: since we execute in PRIV mode and no MPU guard or PSPLIM
+     * register is guarding the end of the default stack, we won't be able
+     * to detect any stack overflows.
+     */
+
+#if defined(CONFIG_BUILTIN_STACK_GUARD)
+    /* clear stack pointer limit before setting the PSP */
+    mov ip, #0
+    msr PSPLIM, ip
+#endif
+
+    /* setup privileged stack */
+    ldr ip, =_kernel
+    ldr ip, [ip, #_kernel_offset_to_current]
+    ldr ip, [ip, #_thread_offset_to_priv_stack_start]    /* priv stack ptr */
+    add ip, #CONFIG_PRIVILEGED_STACK_SIZE
+
+    /* Store current SP and LR at the beginning of the priv stack */
+    subs ip, #8
+    str sp, [ip, #0]
+    str lr, [ip, #4]
+
+    /* switch to privileged stack */
+    msr PSP, ip
+
+#if defined(CONFIG_BUILTIN_STACK_GUARD)
+    /* Set stack pointer limit (needed in privileged mode) */
+    ldr ip, =_kernel
+    ldr ip, [ip, #_kernel_offset_to_current]
+    ldr ip, [ip, #_thread_offset_to_priv_stack_start]    /* priv stack ptr */
+    msr PSPLIM, ip
+#endif
+
     /*
      * r0-r5 contain arguments
      * r6 contains call_id
@@ -168,37 +222,12 @@ SECTION_FUNC(TEXT, _arm_do_syscall)
     bne valid_syscall
 
     /* BAD SYSCALL path */
-    /* fixup stack frame on unprivileged stack, adding ssf */
+    /* fixup stack frame on the privileged stack, adding ssf */
     mov ip, sp
     push {r4,r5,ip,lr}
     b dispatch_syscall
 
 valid_syscall:
-    /* setup privileged stack */
-    push {r6}
-    ldr r6, =_kernel
-    ldr r6, [r6, #_kernel_offset_to_current]
-    ldr ip, [r6, #_thread_offset_to_priv_stack_start]    /* priv stack ptr */
-    ldr r6, =CONFIG_PRIVILEGED_STACK_SIZE
-    add ip, r6
-    pop {r6}
-    subs ip, #8
-    str sp, [ip, #0]
-    str lr, [ip, #4]
-
-    /* switch to privileged stack */
-    msr PSP, ip
-
-#if defined(CONFIG_BUILTIN_STACK_GUARD)
-    /* Set stack pointer limit (needed in privileged mode) */
-    push {r6}
-    ldr r6, =_kernel
-    ldr r6, [r6, #_kernel_offset_to_current]
-    ldr r6, [r6, #_thread_offset_to_priv_stack_start]    /* priv stack ptr */
-    msr PSPLIM, r6
-    pop {r6}
-#endif
-
     /* push args to complete stack frame */
     push {r4,r5}
 
@@ -215,16 +244,22 @@ dispatch_syscall:
 
 #if defined(CONFIG_BUILTIN_STACK_GUARD)
     /* clear stack limit (stack protection not required in user mode) */
-    push {r3}
     mov r3, #0
     msr PSPLIM, r3
-    pop {r3}
 #endif
 
     /* set stack back to unprivileged stack */
     ldr ip, [sp,#8]
     msr PSP, ip
 
+    push {r0, r1}
+    ldr r0, =_kernel
+    ldr r0, [r0, #_kernel_offset_to_current]
+    ldr r1, [r0, #_thread_offset_to_mode]
+    orrs r1, r1, #1
+    /* Store (unprivileged) mode in thread's mode state variable */
+    str r1, [r0, #_thread_offset_to_mode]
+    dsb
     /* drop privileges by setting bit 0 in CONTROL */
     mrs ip, CONTROL
     orrs ip, ip, #1
@@ -235,6 +270,7 @@ dispatch_syscall:
      * instructions with the previous privilege.
      */
     isb
+    pop {r0, r1}
 
     /* Zero out volatile (caller-saved) registers so as to not leak state from
      * kernel mode. The C calling convention for the syscall handler will

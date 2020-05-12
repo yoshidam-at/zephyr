@@ -13,7 +13,7 @@ LOG_MODULE_REGISTER(net_test, LOG_LEVEL_DBG);
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <kernel.h>
 
 #include <net/coap.h>
@@ -186,7 +186,7 @@ static int test_parse_empty_pdu(void)
 	code = coap_header_get_code(&cpkt);
 	id = coap_header_get_id(&cpkt);
 
-	if (ver != 1) {
+	if (ver != 1U) {
 		TC_PRINT("Invalid version for parsed packet\n");
 		goto done;
 	}
@@ -201,7 +201,7 @@ static int test_parse_empty_pdu(void)
 		goto done;
 	}
 
-	if (id != 0) {
+	if (id != 0U) {
 		TC_PRINT("Packet id doesn't match reference\n");
 		goto done;
 	}
@@ -247,7 +247,7 @@ static int test_parse_empty_pdu_1(void)
 	code = coap_header_get_code(&cpkt);
 	id = coap_header_get_id(&cpkt);
 
-	if (ver != 1) {
+	if (ver != 1U) {
 		TC_PRINT("Invalid version for parsed packet\n");
 		goto done;
 	}
@@ -262,7 +262,7 @@ static int test_parse_empty_pdu_1(void)
 		goto done;
 	}
 
-	if (id != 0) {
+	if (id != 0U) {
 		TC_PRINT("Packet id doesn't match reference\n");
 		goto done;
 	}
@@ -312,7 +312,7 @@ static int test_parse_simple_pdu(void)
 	code = coap_header_get_code(&cpkt);
 	id = coap_header_get_id(&cpkt);
 
-	if (ver != 1) {
+	if (ver != 1U) {
 		TC_PRINT("Invalid version for parsed packet\n");
 		goto done;
 	}
@@ -334,7 +334,7 @@ static int test_parse_simple_pdu(void)
 
 	tkl = coap_header_get_token(&cpkt, (u8_t *)token);
 
-	if (tkl != 5) {
+	if (tkl != 5U) {
 		TC_PRINT("Token length doesn't match reference\n");
 		goto done;
 	}
@@ -351,12 +351,12 @@ static int test_parse_simple_pdu(void)
 		goto done;
 	}
 
-	if (options[0].len != 1) {
+	if (options[0].len != 1U) {
 		TC_PRINT("Option length doesn't match the reference\n");
 		goto done;
 	}
 
-	if (((u8_t *)options[0].value)[0] != 0) {
+	if (((u8_t *)options[0].value)[0] != 0U) {
 		TC_PRINT("Option value doesn't match the reference\n");
 		goto done;
 	}
@@ -1033,7 +1033,7 @@ static int test_block2_size(void)
 			goto done;
 		}
 
-		if (i != 0) {
+		if (i != 0U) {
 			k_free(rsp.data);
 		}
 
@@ -1462,7 +1462,7 @@ static const struct {
 } tests[] = {
 	{ "Build empty PDU test", test_build_empty_pdu, },
 	{ "Build simple PDU test", test_build_simple_pdu, },
-	{ "Parse emtpy PDU test", test_parse_empty_pdu, },
+	{ "Parse empty PDU test", test_parse_empty_pdu, },
 	{ "Parse empty PDU test no marker", test_parse_empty_pdu_1, },
 	{ "Parse simple PDU test", test_parse_simple_pdu, },
 	{ "Parse malformed option", test_parse_malformed_opt },

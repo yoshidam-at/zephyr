@@ -6,9 +6,9 @@
 
 #include <errno.h>
 #include <device.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 #include <soc.h>
-#include <sys_io.h>
+#include <sys/sys_io.h>
 #include "gpio_utils.h"
 
 typedef void (*config_func_t)(struct device *dev);
@@ -66,7 +66,7 @@ static void gpio_stellaris_isr(void *arg)
 	u32_t base = cfg->base;
 	u32_t int_stat = sys_read32(GPIO_REG_ADDR(base, GPIO_MIS_OFFSET));
 
-	_gpio_fire_callbacks(&context->cb, dev, int_stat);
+	gpio_fire_callbacks(&context->cb, dev, int_stat);
 
 	sys_write32(int_stat, GPIO_REG_ADDR(base, GPIO_ICR_OFFSET));
 }
@@ -214,7 +214,7 @@ static int gpio_stellaris_manage_callback(struct device *dev,
 {
 	struct gpio_stellaris_runtime *context = DEV_DATA(dev);
 
-	_gpio_manage_callback(&context->cb, callback, set);
+	gpio_manage_callback(&context->cb, callback, set);
 
 	return 0;
 }

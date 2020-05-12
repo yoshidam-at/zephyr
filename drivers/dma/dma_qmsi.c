@@ -11,7 +11,7 @@
 #include <soc.h>
 #include <device.h>
 #include <init.h>
-#include <dma.h>
+#include <drivers/dma.h>
 
 #include "qm_dma.h"
 #include "qm_isr.h"
@@ -136,7 +136,7 @@ static int dma_qmsi_chan_config(struct device *dev, u32_t channel,
 	u32_t temp = 0U;
 	int ret = 0;
 
-	if (config->block_count != 1) {
+	if (config->block_count != 1U) {
 		return -ENOTSUP;
 	}
 
@@ -279,19 +279,24 @@ static int dma_resume_device(struct device *dev)
 }
 
 static int dma_qmsi_device_ctrl(struct device *dev, u32_t ctrl_command,
-				void *context)
+				void *context, device_pm_cb cb, void *arg)
 {
+	int ret = 0;
+
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
 		if (*((u32_t *)context) == DEVICE_PM_SUSPEND_STATE) {
-			return dma_suspend_device(dev);
+			ret = dma_suspend_device(dev);
 		} else if (*((u32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
-			return dma_resume_device(dev);
+			ret = dma_resume_device(dev);
 		}
 	} else if (ctrl_command == DEVICE_PM_GET_POWER_STATE) {
 		*((u32_t *)context) = dma_qmsi_get_power_state(dev);
 	}
 
-	return 0;
+	if (cb) {
+		cb(dev, ret, context, arg);
+	}
+	return ret;
 }
 #endif
 
@@ -312,40 +317,6 @@ static void dma_qmsi_config(struct device *dev)
 				qm_dma_0_isr_1, DEVICE_GET(dma_qmsi), 0);
 	irq_enable(IRQ_GET_NUMBER(QM_IRQ_DMA_0_INT_1));
 	QM_IR_UNMASK_INTERRUPTS(QM_INTERRUPT_ROUTER->dma_0_int_1_mask);
-
-#if (CONFIG_SOC_QUARK_SE_C1000)
-
-	IRQ_CONNECT(IRQ_GET_NUMBER(QM_IRQ_DMA_0_INT_2), CONFIG_DMA_0_IRQ_PRI,
-				qm_dma_0_isr_2, DEVICE_GET(dma_qmsi), 0);
-	irq_enable(IRQ_GET_NUMBER(QM_IRQ_DMA_0_INT_2));
-	QM_IR_UNMASK_INTERRUPTS(QM_INTERRUPT_ROUTER->dma_0_int_2_mask);
-
-	IRQ_CONNECT(IRQ_GET_NUMBER(QM_IRQ_DMA_0_INT_3), CONFIG_DMA_0_IRQ_PRI,
-				qm_dma_0_isr_3, DEVICE_GET(dma_qmsi), 0);
-	irq_enable(IRQ_GET_NUMBER(QM_IRQ_DMA_0_INT_3));
-	QM_IR_UNMASK_INTERRUPTS(QM_INTERRUPT_ROUTER->dma_0_int_3_mask);
-
-	IRQ_CONNECT(IRQ_GET_NUMBER(QM_IRQ_DMA_0_INT_4), CONFIG_DMA_0_IRQ_PRI,
-				qm_dma_0_isr_4, DEVICE_GET(dma_qmsi), 0);
-	irq_enable(IRQ_GET_NUMBER(QM_IRQ_DMA_0_INT_4));
-	QM_IR_UNMASK_INTERRUPTS(QM_INTERRUPT_ROUTER->dma_0_int_4_mask);
-
-	IRQ_CONNECT(IRQ_GET_NUMBER(QM_IRQ_DMA_0_INT_5), CONFIG_DMA_0_IRQ_PRI,
-				qm_dma_0_isr_5, DEVICE_GET(dma_qmsi), 0);
-	irq_enable(IRQ_GET_NUMBER(QM_IRQ_DMA_0_INT_5));
-	QM_IR_UNMASK_INTERRUPTS(QM_INTERRUPT_ROUTER->dma_0_int_5_mask);
-
-	IRQ_CONNECT(IRQ_GET_NUMBER(QM_IRQ_DMA_0_INT_6), CONFIG_DMA_0_IRQ_PRI,
-				qm_dma_0_isr_6, DEVICE_GET(dma_qmsi), 0);
-	irq_enable(IRQ_GET_NUMBER(QM_IRQ_DMA_0_INT_6));
-	QM_IR_UNMASK_INTERRUPTS(QM_INTERRUPT_ROUTER->dma_0_int_6_mask);
-
-	IRQ_CONNECT(IRQ_GET_NUMBER(QM_IRQ_DMA_0_INT_7), CONFIG_DMA_0_IRQ_PRI,
-				qm_dma_0_isr_7, DEVICE_GET(dma_qmsi), 0);
-	irq_enable(IRQ_GET_NUMBER(QM_IRQ_DMA_0_INT_7));
-	QM_IR_UNMASK_INTERRUPTS(QM_INTERRUPT_ROUTER->dma_0_int_7_mask);
-
-#endif /* CONFIG_SOC_QUARK_SE_C1000 */
 
 	IRQ_CONNECT(IRQ_GET_NUMBER(QM_IRQ_DMA_0_ERROR_INT),
 		    CONFIG_DMA_0_IRQ_PRI, qm_dma_0_error_isr,

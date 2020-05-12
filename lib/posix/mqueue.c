@@ -6,7 +6,7 @@
 #include <kernel.h>
 #include <errno.h>
 #include <string.h>
-#include <atomic.h>
+#include <sys/atomic.h>
 #include <posix/time.h>
 #include <posix/mqueue.h>
 
@@ -375,7 +375,7 @@ static s32_t send_message(mqueue_desc *mqd, const char *msg_ptr, size_t msg_len,
 		return ret;
 	}
 
-	if ((mqd->flags & O_NONBLOCK) != 0) {
+	if ((mqd->flags & O_NONBLOCK) != 0U) {
 		timeout = K_NO_WAIT;
 	}
 
@@ -407,7 +407,7 @@ static s32_t receive_message(mqueue_desc *mqd, char *msg_ptr, size_t msg_len,
 		return ret;
 	}
 
-	if ((mqd->flags & O_NONBLOCK) != 0) {
+	if ((mqd->flags & O_NONBLOCK) != 0U) {
 		timeout = K_NO_WAIT;
 	}
 

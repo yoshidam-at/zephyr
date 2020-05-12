@@ -99,7 +99,20 @@
 #define SSP_SIZE				0x0000200
 #define SSP_BASE(x)				(0x00077000 + (x) * SSP_SIZE)
 #define SSP_MN_DIV_SIZE				(8)
-#define SSP_MN_DIV_BASE(x)		(0x00078D00 + ((x) * SSP_MN_DIV_SIZE))
+#define SSP_MN_DIV_BASE(x)			\
+	(0x00078D00 + ((x) * SSP_MN_DIV_SIZE))
+
+/* MCLK control */
+#define SOC_MCLK_DIV_CTRL_BASE			0x78C00
+#define SOC_NUM_MCLK_OUTPUTS			2
+#define SOC_MDIVCTRL_MCLK_OUT_EN(mclk)		BIT(mclk)
+#define SOC_MDIVXR_SET_DIVIDER_BYPASS		BIT_MASK(12)
+
+struct soc_mclk_control_regs {
+	u32_t	mdivctrl;
+	u32_t	reserved[31];
+	u32_t	mdivxr[SOC_NUM_MCLK_OUTPUTS];
+};
 
 #define PDM_BASE				0x00010000
 
@@ -191,10 +204,15 @@ struct soc_global_regs {
 	u32_t	straps;
 };
 
-extern void _soc_irq_enable(u32_t irq);
-extern void _soc_irq_disable(u32_t irq);
-extern void dcache_writeback_region(void *addr, size_t size);
-extern void dcache_invalidate_region(void *addr, size_t size);
+/* macros for data cache operations */
+#define SOC_DCACHE_FLUSH(addr, size)		\
+	xthal_dcache_region_writeback((addr), (size))
+#define SOC_DCACHE_INVALIDATE(addr, size)	\
+	xthal_dcache_region_invalidate((addr), (size))
+
+extern void z_soc_irq_enable(u32_t irq);
+extern void z_soc_irq_disable(u32_t irq);
+
 extern u32_t soc_get_ref_clk_freq(void);
 
 #endif /* __INC_SOC_H */

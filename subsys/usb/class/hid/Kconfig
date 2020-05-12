@@ -9,13 +9,24 @@
 config USB_DEVICE_HID
 	bool "USB Human Interface Device support"
 	help
-	  Enables USB Human Interface Device support.
+	  Enables USB Human Interface Device support. Default device name
+	  is "HID_0".
 
 if USB_DEVICE_HID
 
+config USB_HID_DEVICE_NAME
+	string "USB HID device name template"
+	default "HID"
+	help
+	  Device name template for the HID Devices. First device would have
+	  name $(USB_HID_DEVICE_NAME)_0, etc.
+
+module = USB_HID
+default-count = 1
+source "subsys/usb/class/Kconfig.template.composite_device_number"
+
 config ENABLE_HID_INT_OUT_EP
-	bool
-	prompt "Enable USB HID Device Interrupt OUT Endpoint"
+	bool "Enable USB HID Device Interrupt OUT Endpoint"
 	help
 	  Enable USB HID Device Interrupt OUT Endpoint.
 
@@ -24,12 +35,6 @@ config HID_INTERRUPT_EP_MPS
 	default 16
 	help
 	  USB HID Device interrupt endpoint size
-
-config USB_HID_MAX_PAYLOAD_SIZE
-	int
-	default 64
-	help
-	  Max allowed payload size over USB HID Class
 
 config USB_HID_POLL_INTERVAL_MS
 	int "Polling interval"
@@ -46,8 +51,7 @@ config USB_HID_REPORTS
 	  Must be equal or higher than highest report ID (if they are not consecutive).
 
 config USB_HID_BOOT_PROTOCOL
-	bool
-	prompt "Enable USB HID Boot Protocol handling"
+	bool "Enable USB HID Boot Protocol handling"
 	help
 	  Sets bInterfaceSubClass to 1 and enables Set_Protocol and Get_Protocol
 	  requests handling.

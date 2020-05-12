@@ -164,14 +164,13 @@ struct connection {
 		} phy_upd_ind;
 #endif /* CONFIG_BT_CTLR_PHY */
 
+#if defined(CONFIG_BT_CTLR_LE_ENC)
 		struct {
 			u8_t  initiate;
 			u8_t  error_code;
-			u8_t  rand[8];
-			u8_t  ediv[2];
-			u8_t  ltk[16];
 			u8_t  skd[16];
 		} encryption;
+#endif /* CONFIG_BT_CTLR_LE_ENC */
 	} llcp;
 
 	u32_t llcp_features;
@@ -194,6 +193,16 @@ struct connection {
 			u8_t reason;
 		} radio_pdu_node_rx;
 	} llcp_terminate;
+
+#if defined(CONFIG_BT_CTLR_LE_ENC)
+	struct {
+		u8_t req;
+		u8_t ack;
+		u8_t ediv[2];
+		u8_t rand[8];
+		u8_t ltk[16];
+	} llcp_enc;
+#endif /* CONFIG_BT_CTLR_LE_ENC */
 
 #if defined(CONFIG_BT_CTLR_CONN_PARAM_REQ)
 	struct {
@@ -232,12 +241,14 @@ struct connection {
 	struct {
 		u8_t  req;
 		u8_t  ack;
-		u8_t  state:2;
-#define LLCP_LENGTH_STATE_REQ        0
-#define LLCP_LENGTH_STATE_ACK_WAIT   1
-#define LLCP_LENGTH_STATE_RSP_WAIT   2
-#define LLCP_LENGTH_STATE_RESIZE     3
-		u8_t  pause_tx:1;
+		u8_t  state:3;
+#define LLCP_LENGTH_STATE_REQ                 0
+#define LLCP_LENGTH_STATE_REQ_ACK_WAIT        1
+#define LLCP_LENGTH_STATE_RSP_WAIT            2
+#define LLCP_LENGTH_STATE_RSP_ACK_WAIT        3
+#define LLCP_LENGTH_STATE_RESIZE              4
+#define LLCP_LENGTH_STATE_RESIZE_RSP          5
+#define LLCP_LENGTH_STATE_RESIZE_RSP_ACK_WAIT 6
 		u16_t rx_octets;
 		u16_t tx_octets;
 #if defined(CONFIG_BT_CTLR_PHY)
@@ -263,15 +274,6 @@ struct connection {
 	} llcp_phy;
 #endif /* CONFIG_BT_CTLR_PHY */
 
-	u8_t  sn:1;
-	u8_t  nesn:1;
-	u8_t  pause_rx:1;
-	u8_t  pause_tx:1;
-	u8_t  enc_rx:1;
-	u8_t  enc_tx:1;
-	u8_t  refresh:1;
-	u8_t  empty:1;
-
 	struct ccm ccm_rx;
 	struct ccm ccm_tx;
 
@@ -282,6 +284,23 @@ struct connection {
 	struct radio_pdu_node_tx *pkt_tx_last;
 	u8_t  packet_tx_head_len;
 	u8_t  packet_tx_head_offset;
+
+	u8_t  sn:1;
+	u8_t  nesn:1;
+	u8_t  pause_rx:1;
+	u8_t  pause_tx:1;
+	u8_t  enc_rx:1;
+	u8_t  enc_tx:1;
+	u8_t  refresh:1;
+	u8_t  empty:1;
+
+	/* Detect empty L2CAP start frame */
+	u8_t  start_empty:1;
+
+#if defined(CONFIG_BT_CTLR_DATA_LENGTH) || defined(CONFIG_BT_CTLR_PHY)
+	u8_t evt_len_upd:1;
+	u8_t evt_len_adv:1;
+#endif
 
 #if defined(CONFIG_BT_CTLR_CONN_RSSI)
 	u8_t  rssi_latest;
@@ -319,7 +338,7 @@ struct pdu_data_q_tx {
 
 #define LL_MEM_RX_POOL_SZ (MROUND(offsetof(struct radio_pdu_node_rx, \
 					   pdu_data) + \
-				  max((PDU_AC_SIZE_MAX + PDU_AC_SIZE_EXTRA), \
+				  MAX((PDU_AC_SIZE_MAX + PDU_AC_SIZE_EXTRA), \
 				      (offsetof(struct pdu_data, lldata) + \
 				       LL_LENGTH_OCTETS_RX_MAX))) * \
 			   (RADIO_PACKET_COUNT_RX_MAX + 3))

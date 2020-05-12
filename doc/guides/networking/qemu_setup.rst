@@ -3,6 +3,10 @@
 Networking with QEMU
 ####################
 
+.. contents::
+    :local:
+    :depth: 2
+
 This page describes how to set up a virtual network between a (Linux) host
 and a Zephyr application running in a QEMU virtual machine (built for Zephyr
 targets such as qemu_x86 and qemu_cortex_m3).
@@ -129,11 +133,12 @@ any daemons or helpers started in the initial steps, to avoid possible
 networking or routing problems such as address conflicts in local
 network interfaces. For example, stop them if you switch from testing
 networking with QEMU to using real hardware, or to return your host
-laptop to normal WiFi use.
+laptop to normal Wi-Fi use.
 
 To stop the daemons, press Ctrl+C in the corresponding terminal windows
 (you need to stop both ``loop-slip-tap.sh`` and ``loop-socat.sh``).
 
+Exit QEMU by pressing :kbd:`CTRL+A` :kbd:`x`.
 
 .. _networking_internet:
 
@@ -241,7 +246,7 @@ Terminal #1:
    $ZEPHYR_BASE/../net-tools/tunslip6 -t tapMAIN -T -s /tmp/slip.devMAIN \
         2001:db8::1/64
    # Now run Zephyr
-   make run QEMU_INSTANCE=MAIN
+   make -Cbuild run QEMU_INSTANCE=MAIN
 
 Terminal #2:
 ============
@@ -251,4 +256,4 @@ Terminal #2:
    socat PTY,link=/tmp/slip.devOTHER UNIX-LISTEN:/tmp/slip.sockOTHER
    $ZEPHYR_BASE/../net-tools/tunslip6 -t tapOTHER -T -s /tmp/slip.devOTHER \
         2001:db8::1/64
-   make run QEMU_INSTANCE=OTHER
+   make -Cbuild run QEMU_INSTANCE=OTHER

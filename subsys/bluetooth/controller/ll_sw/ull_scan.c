@@ -29,6 +29,7 @@
 
 #include "ull_adv_types.h"
 #include "ull_scan_types.h"
+#include "ull_filter.h"
 
 #include "ull_internal.h"
 #include "ull_adv_internal.h"
@@ -40,13 +41,13 @@
 #include <soc.h>
 #include "hal/debug.h"
 
-static int _init_reset(void);
+static int init_reset(void);
 static void ticker_cb(u32_t ticks_at_expire, u32_t remainder, u16_t lazy,
 		      void *param);
 static u8_t disable(u16_t handle);
 
-#define CONFIG_BT_SCAN_MAX 1
-static struct ll_scan_set ll_scan[CONFIG_BT_SCAN_MAX];
+#define BT_CTLR_SCAN_MAX 1
+static struct ll_scan_set ll_scan[BT_CTLR_SCAN_MAX];
 
 u8_t ll_scan_params_set(u8_t type, u16_t interval, u16_t window,
 			u8_t own_addr_type, u8_t filter_policy)
@@ -58,8 +59,11 @@ u8_t ll_scan_params_set(u8_t type, u16_t interval, u16_t window,
 		return BT_HCI_ERR_CMD_DISALLOWED;
 	}
 
-	return ull_scan_params_set(scan, type, interval, window, own_addr_type,
-				   filter_policy);
+	scan->own_addr_type = own_addr_type;
+
+	ull_scan_params_set(&scan->lll, type, interval, window, filter_policy);
+
+	return 0;
 }
 
 u8_t ll_scan_enable(u8_t enable)
@@ -75,6 +79,22 @@ u8_t ll_scan_enable(u8_t enable)
 		return BT_HCI_ERR_CMD_DISALLOWED;
 	}
 
+#if defined(CONFIG_BT_CTLR_PRIVACY)
+	struct lll_scan *lll = &scan->lll;
+	ull_filter_scan_update(lll->filter_policy);
+
+	lll->rl_idx = FILTER_IDX_NONE;
+	lll->rpa_gen = 0;
+
+	if ((lll->type & 0x1) &&
+	    (scan->own_addr_type == BT_ADDR_LE_PUBLIC_ID ||
+	     scan->own_addr_type == BT_ADDR_LE_RANDOM_ID)) {
+		/* Generate RPAs if required */
+		ull_filter_rpa_update(false);
+		lll->rpa_gen = 1;
+	}
+#endif
+
 	return ull_scan_enable(scan);
 }
 
@@ -82,7 +102,7 @@ int ull_scan_init(void)
 {
 	int err;
 
-	err = _init_reset();
+	err = init_reset();
 	if (err) {
 		return err;
 	}
@@ -95,11 +115,11 @@ int ull_scan_reset(void)
 	u16_t handle;
 	int err;
 
-	for (handle = 0; handle < CONFIG_BT_SCAN_MAX; handle++) {
+	for (handle = 0U; handle < BT_CTLR_SCAN_MAX; handle++) {
 		(void)disable(handle);
 	}
 
-	err = _init_reset();
+	err = init_reset();
 	if (err) {
 		return err;
 	}
@@ -107,12 +127,9 @@ int ull_scan_reset(void)
 	return 0;
 }
 
-u8_t ull_scan_params_set(struct ll_scan_set *scan, u8_t type,
-			 u16_t interval, u16_t window,
-			 u8_t own_addr_type, u8_t filter_policy)
+void ull_scan_params_set(struct lll_scan *lll, u8_t type, u16_t interval,
+			 u16_t window, u8_t filter_policy)
 {
-	struct lll_scan *lll = &scan->lll;
-
 	/* type value:
 	 * 0000b - legacy 1M passive
 	 * 0001b - legacy 1M active
@@ -133,11 +150,7 @@ u8_t ull_scan_params_set(struct ll_scan_set *scan, u8_t type,
 
 	lll->filter_policy = filter_policy;
 	lll->interval = interval;
-	lll->ticks_window = HAL_TICKER_US_TO_TICKS((u64_t)window * 625);
-
-	scan->own_addr_type = own_addr_type;
-
-	return 0;
+	lll->ticks_window = HAL_TICKER_US_TO_TICKS((u64_t)window * 625U);
 }
 
 u8_t ull_scan_enable(struct ll_scan_set *scan)
@@ -150,29 +163,17 @@ u8_t ull_scan_enable(struct ll_scan_set *scan)
 	u32_t ticks_anchor;
 	u32_t ret;
 
-#if defined(CONFIG_BT_CTLR_PRIVACY)
-	ll_filters_scan_update(scan->filter_policy);
-
-	if ((scan->type & 0x1) &&
-	    (scan->own_addr_type == BT_ADDR_LE_PUBLIC_ID ||
-	     scan->own_addr_type == BT_ADDR_LE_RANDOM_ID)) {
-		/* Generate RPAs if required */
-		ll_rl_rpa_update(false);
-		lll->rpa_gen = 1;
-		lll->rl_idx = FILTER_IDX_NONE;
-	}
-#endif
-
+	lll->chan = 0;
 	lll->init_addr_type = scan->own_addr_type;
 	ll_addr_get(lll->init_addr_type, lll->init_addr);
 
 	ull_hdr_init(&scan->ull);
 	lll_hdr_init(lll, scan);
 
-	ticks_interval = HAL_TICKER_US_TO_TICKS((u64_t)lll->interval * 625);
+	ticks_interval = HAL_TICKER_US_TO_TICKS((u64_t)lll->interval * 625U);
 
 	/* TODO: active_to_start feature port */
-	scan->evt.ticks_active_to_start = 0;
+	scan->evt.ticks_active_to_start = 0U;
 	scan->evt.ticks_xtal_to_start =
 		HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_XTAL_US);
 	scan->evt.ticks_preempt_to_start =
@@ -191,21 +192,21 @@ u8_t ull_scan_enable(struct ll_scan_set *scan)
 		lll->ticks_window = 0;
 	}
 
-	ticks_slot_offset = max(scan->evt.ticks_active_to_start,
+	ticks_slot_offset = MAX(scan->evt.ticks_active_to_start,
 				scan->evt.ticks_xtal_to_start);
 
 	if (IS_ENABLED(CONFIG_BT_CTLR_LOW_LAT)) {
 		ticks_slot_overhead = ticks_slot_offset;
 	} else {
-		ticks_slot_overhead = 0;
+		ticks_slot_overhead = 0U;
 	}
 
 	ticks_anchor = ticker_ticks_now_get();
 
 #if defined(CONFIG_BT_CENTRAL) && defined(CONFIG_BT_CTLR_SCHED_ADVANCED)
 	if (!lll->conn) {
-		u32_t ticks_ref = 0;
-		u32_t offset_us = 0;
+		u32_t ticks_ref = 0U;
+		u32_t offset_us = 0U;
 
 		ull_sched_after_mstr_slot_get(TICKER_USER_ID_THREAD,
 					      (ticks_slot_offset +
@@ -226,7 +227,7 @@ u8_t ull_scan_enable(struct ll_scan_set *scan)
 	ret = ticker_start(TICKER_INSTANCE_ID_CTLR,
 			   TICKER_USER_ID_THREAD, TICKER_ID_SCAN_BASE,
 			   ticks_anchor, 0, ticks_interval,
-			   HAL_TICKER_REMAINDER((u64_t)lll->interval * 625),
+			   HAL_TICKER_REMAINDER((u64_t)lll->interval * 625U),
 			   TICKER_NULL_LAZY,
 			   (scan->evt.ticks_slot + ticks_slot_overhead),
 			   ticker_cb, scan,
@@ -237,14 +238,14 @@ u8_t ull_scan_enable(struct ll_scan_set *scan)
 		return BT_HCI_ERR_CMD_DISALLOWED;
 	}
 
-	scan->is_enabled = 1;
+	scan->is_enabled = 1U;
 
 #if defined(CONFIG_BT_CTLR_PRIVACY)
 #if defined(CONFIG_BT_BROADCASTER)
 	if (!ull_adv_is_enabled_get(0))
 #endif
 	{
-		ll_adv_scan_state_cb(BIT(1));
+		ull_filter_adv_scan_state_cb(BIT(1));
 	}
 #endif
 
@@ -283,7 +284,7 @@ u8_t ull_scan_disable(u16_t handle, struct ll_scan_set *scan)
 
 struct ll_scan_set *ull_scan_set_get(u16_t handle)
 {
-	if (handle >= CONFIG_BT_SCAN_MAX) {
+	if (handle >= BT_CTLR_SCAN_MAX) {
 		return NULL;
 	}
 
@@ -293,6 +294,11 @@ struct ll_scan_set *ull_scan_set_get(u16_t handle)
 u16_t ull_scan_handle_get(struct ll_scan_set *scan)
 {
 	return ((u8_t *)scan - (u8_t *)ll_scan) / sizeof(*scan);
+}
+
+u16_t ull_scan_lll_handle_get(struct lll_scan *lll)
+{
+	return ull_scan_handle_get((void *)lll->hdr.parent);
 }
 
 struct ll_scan_set *ull_scan_is_enabled_get(u16_t handle)
@@ -351,7 +357,7 @@ u32_t ull_scan_filter_pol_get(u16_t handle)
 	return scan->lll.filter_policy;
 }
 
-static int _init_reset(void)
+static int init_reset(void)
 {
 	return 0;
 }
@@ -359,8 +365,8 @@ static int _init_reset(void)
 static void ticker_cb(u32_t ticks_at_expire, u32_t remainder, u16_t lazy,
 		      void *param)
 {
-	static memq_link_t _link;
-	static struct mayfly _mfy = {0, 0, &_link, NULL, lll_scan_prepare};
+	static memq_link_t link;
+	static struct mayfly mfy = {0, 0, &link, NULL, lll_scan_prepare};
 	static struct lll_prepare_param p;
 	struct ll_scan_set *scan = param;
 	u32_t ret;
@@ -377,11 +383,11 @@ static void ticker_cb(u32_t ticks_at_expire, u32_t remainder, u16_t lazy,
 	p.remainder = remainder;
 	p.lazy = lazy;
 	p.param = &scan->lll;
-	_mfy.param = &p;
+	mfy.param = &p;
 
 	/* Kick LLL prepare */
 	ret = mayfly_enqueue(TICKER_USER_ID_ULL_HIGH, TICKER_USER_ID_LLL,
-			     0, &_mfy);
+			     0, &mfy);
 	LL_ASSERT(!ret);
 
 #if defined(CONFIG_BT_CENTRAL) && defined(CONFIG_BT_CTLR_SCHED_ADVANCED)
@@ -413,23 +419,29 @@ static u8_t disable(u16_t handle)
 	u8_t ret;
 
 	scan = ull_scan_is_enabled_get(handle);
-	if (!scan || scan->lll.conn) {
+	if (!scan) {
 		return BT_HCI_ERR_CMD_DISALLOWED;
 	}
+
+#if defined(CONFIG_BT_CENTRAL)
+	if (scan->lll.conn) {
+		return BT_HCI_ERR_CMD_DISALLOWED;
+	}
+#endif
 
 	ret = ull_scan_disable(handle, scan);
 	if (ret) {
 		return ret;
 	}
 
-	scan->is_enabled = 0;
+	scan->is_enabled = 0U;
 
 #if defined(CONFIG_BT_CTLR_PRIVACY)
 #if defined(CONFIG_BT_BROADCASTER)
 	if (!ull_adv_is_enabled_get(0))
 #endif
 	{
-		ll_adv_scan_state_cb(0);
+		ull_filter_adv_scan_state_cb(0);
 	}
 #endif
 

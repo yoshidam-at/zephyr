@@ -26,9 +26,11 @@ LOG_MODULE_REGISTER(net_core, CONFIG_NET_CORE_LOG_LEVEL);
 #include <net/net_pkt.h>
 #include <net/net_core.h>
 #include <net/dns_resolve.h>
-#include <net/tcp.h>
 #include <net/gptp.h>
+
+#if defined(CONFIG_NET_LLDP)
 #include <net/lldp.h>
+#endif
 
 #include "net_private.h"
 #include "net_shell.h"
@@ -38,11 +40,12 @@ LOG_MODULE_REGISTER(net_core, CONFIG_NET_CORE_LOG_LEVEL);
 
 #include "icmpv4.h"
 
-#if defined(CONFIG_NET_DHCPV4)
 #include "dhcpv4.h"
-#endif
 
 #include "route.h"
+
+#include "packet_socket.h"
+#include "canbus_socket.h"
 
 #include "connection.h"
 #include "udp_internal.h"
@@ -70,6 +73,11 @@ static inline enum net_verdict process_data(struct net_pkt *pkt,
 {
 	int ret;
 	bool locally_routed = false;
+
+	ret = net_packet_socket_input(pkt);
+	if (ret != NET_CONTINUE) {
+		return ret;
+	}
 
 #if defined(CONFIG_NET_IPV6_FRAGMENT)
 	/* If the packet is routed back to us when we have reassembled
@@ -100,6 +108,11 @@ static inline enum net_verdict process_data(struct net_pkt *pkt,
 
 			return ret;
 		}
+	}
+
+	ret = net_canbus_socket_input(pkt);
+	if (ret != NET_CONTINUE) {
+		return ret;
 	}
 
 	/* L2 has modified the buffer starting point, it is easier
@@ -297,6 +310,7 @@ int net_send_data(struct net_pkt *pkt)
 	}
 #endif
 
+	net_pkt_trim_buffer(pkt);
 	net_pkt_cursor_init(pkt);
 
 	status = check_ip_addr(pkt);
@@ -320,19 +334,24 @@ int net_send_data(struct net_pkt *pkt)
 
 static void net_rx(struct net_if *iface, struct net_pkt *pkt)
 {
+	bool is_loopback = false;
 	size_t pkt_len;
 
-#if defined(CONFIG_NET_STATISTICS)
-	pkt_len = pkt->total_pkt_len;
-#else
 	pkt_len = net_pkt_get_len(pkt);
-#endif
 
 	NET_DBG("Received pkt %p len %zu", pkt, pkt_len);
 
 	net_stats_update_bytes_recv(iface, pkt_len);
 
-	processing_data(pkt, false);
+	if (IS_ENABLED(CONFIG_NET_LOOPBACK)) {
+#ifdef CONFIG_NET_L2_DUMMY
+		if (net_if_l2(iface) == &NET_L2_GET_NAME(DUMMY)) {
+			is_loopback = true;
+		}
+#endif
+	}
+
+	processing_data(pkt, is_loopback);
 
 	net_print_statistics();
 	net_pkt_print();
@@ -355,10 +374,8 @@ static void net_queue_rx(struct net_if *iface, struct net_pkt *pkt)
 	k_work_init(net_pkt_work(pkt), process_rx_packet);
 
 #if defined(CONFIG_NET_STATISTICS)
-	pkt->total_pkt_len = net_pkt_get_len(pkt);
-
 	net_stats_update_tc_recv_pkt(iface, tc);
-	net_stats_update_tc_recv_bytes(iface, tc, pkt->total_pkt_len);
+	net_stats_update_tc_recv_bytes(iface, tc, net_pkt_get_len(pkt));
 	net_stats_update_tc_recv_priority(iface, tc, prio);
 #endif
 
@@ -380,7 +397,7 @@ int net_recv_data(struct net_if *iface, struct net_pkt *pkt)
 		return -ENODATA;
 	}
 
-	if (!atomic_test_bit(iface->if_dev->flags, NET_IF_UP)) {
+	if (!net_if_flag_is_set(iface, NET_IF_UP)) {
 		return -ENETDOWN;
 	}
 
@@ -409,22 +426,38 @@ static inline void l3_init(void)
 
 	net_ipv4_autoconf_init();
 
-#if defined(CONFIG_NET_UDP) || defined(CONFIG_NET_TCP)
-	net_conn_init();
-#endif
+	if (IS_ENABLED(CONFIG_NET_UDP) ||
+	    IS_ENABLED(CONFIG_NET_TCP) ||
+	    IS_ENABLED(CONFIG_NET_SOCKETS_PACKET) ||
+	    IS_ENABLED(CONFIG_NET_SOCKETS_CAN)) {
+		net_conn_init();
+	}
+
 	net_tcp_init();
 
 	net_route_init();
 
+	NET_DBG("Network L3 init done");
+}
+
+static inline int services_init(void)
+{
+	int status;
+
+	status = net_dhcpv4_init();
+	if (status) {
+		return status;
+	}
+
 	dns_init_resolver();
 
-	NET_DBG("Network L3 init done");
+	net_shell_init();
+
+	return status;
 }
 
 static int net_init(struct device *unused)
 {
-	int status = 0;
-
 	net_hostname_init();
 
 	NET_DBG("Priority %d", CONFIG_NET_INIT_PRIO);
@@ -439,16 +472,7 @@ static int net_init(struct device *unused)
 
 	init_rx_queues();
 
-#if CONFIG_NET_DHCPV4
-	status = net_dhcpv4_init();
-	if (status) {
-		return status;
-	}
-#endif
-
-	net_shell_init();
-
-	return status;
+	return services_init();
 }
 
 SYS_INIT(net_init, POST_KERNEL, CONFIG_NET_INIT_PRIO);

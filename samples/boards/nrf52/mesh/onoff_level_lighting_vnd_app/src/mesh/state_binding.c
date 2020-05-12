@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <gpio.h>
+#include <drivers/gpio.h>
 
 #include "ble_mesh.h"
 #include "device_composition.h"
@@ -49,18 +49,18 @@ static s32_t ceiling(float num)
 	return inum + 1;
 }
 
-u16_t actual_to_linear(u16_t val)
+static u16_t actual_to_linear(u16_t val)
 {
 	float tmp;
 
-	tmp = ((float) val / 65535);
+	tmp = ((float) val / UINT16_MAX);
 
-	return (u16_t) ceiling(65535 * tmp * tmp);
+	return (u16_t) ceiling(UINT16_MAX * tmp * tmp);
 }
 
-u16_t linear_to_actual(u16_t val)
+static u16_t linear_to_actual(u16_t val)
 {
-	return (u16_t) (65535 * sqrt(((float) val / 65535)));
+	return (u16_t) (UINT16_MAX * sqrt(((float) val / UINT16_MAX)));
 }
 
 static void constrain_lightness(u16_t var)
@@ -108,12 +108,12 @@ static s16_t light_ctl_temp_to_level(u16_t temp)
 
 	/* Mesh Model Specification 6.1.3.1.1 2nd formula start */
 
-	tmp = (temp - light_ctl_srv_user_data.temp_range_min) * 65535;
+	tmp = (temp - light_ctl_srv_user_data.temp_range_min) * UINT16_MAX;
 
 	tmp = tmp / (light_ctl_srv_user_data.temp_range_max -
 		     light_ctl_srv_user_data.temp_range_min);
 
-	return (s16_t) (tmp - 32768);
+	return (s16_t) (tmp + INT16_MIN);
 
 	/* 6.1.3.1.1 2nd formula end */
 }
@@ -125,14 +125,38 @@ static u16_t level_to_light_ctl_temp(s16_t level)
 
 	/* Mesh Model Specification 6.1.3.1.1 1st formula start */
 	diff = (float) (light_ctl_srv_user_data.temp_range_max -
-			light_ctl_srv_user_data.temp_range_min) / 65535;
+			light_ctl_srv_user_data.temp_range_min) / UINT16_MAX;
 
 
-	tmp = (u16_t) ((level + 32768) * diff);
+	tmp = (u16_t) ((level - INT16_MIN) * diff);
 
 	return (light_ctl_srv_user_data.temp_range_min + tmp);
 
 	/* 6.1.3.1.1 1st formula end */
+}
+
+void readjust_lightness(void)
+{
+	if (lightness != 0U) {
+		light_lightness_srv_user_data.last = lightness;
+	}
+
+	if (lightness) {
+		gen_onoff_srv_root_user_data.onoff = STATE_ON;
+	} else {
+		gen_onoff_srv_root_user_data.onoff = STATE_OFF;
+	}
+
+	gen_level_srv_root_user_data.level = lightness + INT16_MIN;
+	light_lightness_srv_user_data.actual = lightness;
+	light_lightness_srv_user_data.linear = actual_to_linear(lightness);
+	light_ctl_srv_user_data.lightness = lightness;
+}
+
+void readjust_temperature(void)
+{
+	gen_level_srv_s0_user_data.level = temperature;
+	light_ctl_srv_user_data.temp = level_to_light_ctl_temp(temperature);
 }
 
 void state_binding(u8_t light, u8_t temp)
@@ -166,7 +190,7 @@ void state_binding(u8_t light, u8_t temp)
 		if (gen_onoff_srv_root_user_data.onoff == STATE_OFF) {
 			lightness = 0U;
 		} else if (gen_onoff_srv_root_user_data.onoff == STATE_ON) {
-			if (light_lightness_srv_user_data.def == 0) {
+			if (light_lightness_srv_user_data.def == 0U) {
 				lightness = light_lightness_srv_user_data.last;
 			} else {
 				lightness = light_lightness_srv_user_data.def;
@@ -174,10 +198,10 @@ void state_binding(u8_t light, u8_t temp)
 		}
 		break;
 	case LEVEL:
-		lightness = gen_level_srv_root_user_data.level + 32768;
+		lightness = gen_level_srv_root_user_data.level - INT16_MIN;
 		break;
 	case DELTA_LEVEL:
-		lightness = gen_level_srv_root_user_data.level + 32768;
+		lightness = gen_level_srv_root_user_data.level - INT16_MIN;
 		constrain_lightness2(lightness);
 		goto jump;
 	case ACTUAL:
@@ -197,35 +221,39 @@ void state_binding(u8_t light, u8_t temp)
 	constrain_lightness(lightness);
 
 jump:
-	if (lightness != 0) {
-		light_lightness_srv_user_data.last = lightness;
-	}
+	readjust_lightness();
+}
 
-	if (lightness) {
-		gen_onoff_srv_root_user_data.onoff = STATE_ON;
+void init_lightness_target_values(void)
+{
+	target_lightness = lightness;
+
+	if (target_lightness) {
+		gen_onoff_srv_root_user_data.target_onoff = STATE_ON;
 	} else {
-		gen_onoff_srv_root_user_data.onoff = STATE_OFF;
+		gen_onoff_srv_root_user_data.target_onoff = STATE_OFF;
 	}
 
-	gen_level_srv_root_user_data.level = lightness - 32768;
-	light_lightness_srv_user_data.actual = lightness;
-	light_lightness_srv_user_data.linear = actual_to_linear(lightness);
-	light_ctl_srv_user_data.lightness = lightness;
+	gen_level_srv_root_user_data.target_level = target_lightness + INT16_MIN;
+
+	light_lightness_srv_user_data.target_actual = target_lightness;
+
+	light_lightness_srv_user_data.target_linear =
+		actual_to_linear(target_lightness);
+
+	light_ctl_srv_user_data.target_lightness = target_lightness;
 }
 
 void calculate_lightness_target_values(u8_t type)
 {
-	bool set_light_ctl_temp_target_value;
 	u16_t tmp;
-
-	set_light_ctl_temp_target_value = true;
 
 	switch (type) {
 	case ONOFF:
-		if (gen_onoff_srv_root_user_data.target_onoff == 0) {
+		if (gen_onoff_srv_root_user_data.target_onoff == 0U) {
 			tmp = 0U;
 		} else {
-			if (light_lightness_srv_user_data.def == 0) {
+			if (light_lightness_srv_user_data.def == 0U) {
 				tmp = light_lightness_srv_user_data.last;
 			} else {
 				tmp = light_lightness_srv_user_data.def;
@@ -233,7 +261,7 @@ void calculate_lightness_target_values(u8_t type)
 		}
 		break;
 	case LEVEL:
-		tmp = gen_level_srv_root_user_data.target_level + 32768;
+		tmp = gen_level_srv_root_user_data.target_level - INT16_MIN;
 		break;
 	case ACTUAL:
 		tmp = light_lightness_srv_user_data.target_actual;
@@ -242,8 +270,6 @@ void calculate_lightness_target_values(u8_t type)
 		tmp = linear_to_actual(light_lightness_srv_user_data.target_linear);
 		break;
 	case CTL:
-		set_light_ctl_temp_target_value = false;
-
 		tmp = light_ctl_srv_user_data.target_lightness;
 
 		target_temperature = light_ctl_temp_to_level(light_ctl_srv_user_data.target_temp);
@@ -261,7 +287,7 @@ void calculate_lightness_target_values(u8_t type)
 		gen_onoff_srv_root_user_data.target_onoff = STATE_OFF;
 	}
 
-	gen_level_srv_root_user_data.target_level = target_lightness - 32768;
+	gen_level_srv_root_user_data.target_level = target_lightness + INT16_MIN;
 
 	light_lightness_srv_user_data.target_actual = target_lightness;
 
@@ -269,11 +295,14 @@ void calculate_lightness_target_values(u8_t type)
 		actual_to_linear(target_lightness);
 
 	light_ctl_srv_user_data.target_lightness = target_lightness;
+}
 
-	if (set_light_ctl_temp_target_value) {
-		target_temperature = light_ctl_srv_user_data.temp;
-		light_ctl_srv_user_data.target_temp = target_temperature;
-	}
+void init_temp_target_values(void)
+{
+	target_temperature = temperature;
+	gen_level_srv_s0_user_data.target_level = target_temperature;
+	light_ctl_srv_user_data.target_temp =
+			level_to_light_ctl_temp(target_temperature);
 }
 
 void calculate_temp_target_values(u8_t type)
@@ -297,9 +326,6 @@ void calculate_temp_target_values(u8_t type)
 	default:
 		return;
 	}
-
-	target_lightness = light_ctl_srv_user_data.lightness;
-	light_ctl_srv_user_data.target_lightness = target_lightness;
 
 	if (set_light_ctl_delta_uv_target_value) {
 

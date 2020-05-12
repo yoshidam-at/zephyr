@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <entropy.h>
-#include <atomic.h>
+#include <drivers/entropy.h>
+#include <sys/atomic.h>
 #include <soc.h>
 #include "nrf_rng.h"
 
@@ -35,7 +35,7 @@
  *
  * Due to the first byte in a stream of bytes being more costly on
  * some platforms a "water system" inspired algorithm is used to
- * ammortize the cost of the first byte.
+ * amortize the cost of the first byte.
  *
  * The algorithm will delay generation of entropy until the amount of
  * bytes goes below THRESHOLD, at which point it will generate entropy
@@ -46,7 +46,7 @@
  *
  * The algorithm and HW together has these characteristics:
  *
- * Setting a low threshold will highly ammortize the extra 120us cost
+ * Setting a low threshold will highly amortize the extra 120us cost
  * of the first byte on nRF52.
  *
  * Setting a high threshold will minimize the time spent waiting for
@@ -235,7 +235,7 @@ static int entropy_nrf5_get_entropy(struct device *device, u8_t *buf, u16_t len)
 				     buf, len);
 		k_sem_give(&entropy_nrf5_data.sem_lock);
 
-		if (bytes == 0) {
+		if (bytes == 0U) {
 			/* Pool is empty: Sleep until next interrupt. */
 			k_sem_take(&entropy_nrf5_data.sem_sync, K_FOREVER);
 			continue;
@@ -256,7 +256,7 @@ static int entropy_nrf5_get_entropy_isr(struct device *dev, u8_t *buf, u16_t len
 	/* Check if this API is called on correct driver instance. */
 	__ASSERT_NO_MSG(&entropy_nrf5_data == DEV_DATA(dev));
 
-	if (likely((flags & ENTROPY_BUSYWAIT) == 0)) {
+	if (likely((flags & ENTROPY_BUSYWAIT) == 0U)) {
 		return rng_pool_get((struct rng_pool *)(entropy_nrf5_data.isr),
 				    buf, len);
 	}

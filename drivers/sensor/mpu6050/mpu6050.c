@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <i2c.h>
+#include <drivers/i2c.h>
 #include <init.h>
-#include <misc/byteorder.h>
-#include <sensor.h>
+#include <sys/byteorder.h>
+#include <drivers/sensor.h>
 #include <logging/log.h>
 
 #include "mpu6050.h"
@@ -33,7 +33,7 @@ static void mpu6050_convert_gyro(struct sensor_value *val, s16_t raw_val,
 	s64_t conv_val;
 
 	conv_val = ((s64_t)raw_val * SENSOR_PI * 10) /
-		   (180 * sensitivity_x10);
+		   (sensitivity_x10 * 180U);
 	val->val1 = conv_val / 1000000;
 	val->val2 = conv_val % 1000000;
 }
@@ -177,7 +177,7 @@ int mpu6050_init(struct device *dev)
 		}
 	}
 
-	if (i == 4) {
+	if (i == 4U) {
 		LOG_ERR("Invalid value for accel full-scale range.");
 		return -EINVAL;
 	}
@@ -198,7 +198,7 @@ int mpu6050_init(struct device *dev)
 		}
 	}
 
-	if (i == 4) {
+	if (i == 4U) {
 		LOG_ERR("Invalid value for gyro full-scale range.");
 		return -EINVAL;
 	}

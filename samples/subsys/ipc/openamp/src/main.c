@@ -7,8 +7,8 @@
  */
 
 #include <zephyr.h>
-#include <ipm.h>
-#include <misc/printk.h>
+#include <drivers/ipm.h>
+#include <sys/printk.h>
 #include <device.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -161,13 +161,13 @@ void app_task(void *arg1, void *arg2, void *arg3)
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
 	int status = 0;
-	unsigned int message = 0;
+	unsigned int message = 0U;
 	struct metal_device *device;
 	struct metal_init_params metal_params = METAL_INIT_DEFAULTS;
 
 	printk("\r\nOpenAMP[master] demo started\r\n");
 
-	metal_init(&metal_params);
+	status = metal_init(&metal_params);
 	if (status != 0) {
 		printk("metal_init: failed - error code %d\n", status);
 		return;
@@ -200,7 +200,7 @@ void app_task(void *arg1, void *arg2, void *arg3)
 
 	ipm_register_callback(ipm_handle, platform_ipm_callback, NULL);
 
-	ipm_set_enabled(ipm_handle, 1);
+	status = ipm_set_enabled(ipm_handle, 1);
 	if (status != 0) {
 		printk("ipm_set_enabled failed\n");
 		return;

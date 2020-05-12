@@ -7,7 +7,8 @@
 #include <errno.h>
 #include <zephyr/types.h>
 #include <device.h>
-#include <clock_control.h>
+#include <drivers/entropy.h>
+#include <drivers/clock_control.h>
 #include <drivers/clock_control/nrf_clock_control.h>
 
 #include "hal/ccm.h"
@@ -16,11 +17,12 @@
 
 #include "util/mem.h"
 #include "util/memq.h"
-
 #include "util/mayfly.h"
+
 #include "ticker/ticker.h"
 
 #include "lll.h"
+#include "lll_vendor.h"
 #include "lll_internal.h"
 
 #define LOG_MODULE_NAME bt_ctlr_llsw_nordic_lll
@@ -40,16 +42,20 @@ static struct {
 	struct device *clk_hf;
 } lll;
 
-static int _init_reset(void);
+/* Entropy device */
+static struct device *dev_entropy;
+
+static int init_reset(void);
 static int prepare(lll_is_abort_cb_t is_abort_cb, lll_abort_cb_t abort_cb,
 		   lll_prepare_cb_t prepare_cb, int prio,
 		   struct lll_prepare_param *prepare_param, u8_t is_resume);
 static int resume_enqueue(lll_prepare_cb_t resume_cb, int resume_prio);
 
 #if !defined(CONFIG_BT_CTLR_LOW_LAT)
-static void _preempt_ticker_cb(u32_t ticks_at_expire, u32_t remainder,
-			       u16_t lazy, void *param);
-static void _preempt(void *param);
+static void ticker_start_op_cb(u32_t status, void *param);
+static void preempt_ticker_cb(u32_t ticks_at_expire, u32_t remainder,
+			      u16_t lazy, void *param);
+static void preempt(void *param);
 #else /* CONFIG_BT_CTLR_LOW_LAT */
 #if (CONFIG_BT_CTLR_LLL_PRIO == CONFIG_BT_CTLR_ULL_LOW_PRIO)
 static void ticker_op_job_disable(u32_t status, void *op_context);
@@ -107,11 +113,17 @@ int lll_init(void)
 	struct device *clk_k32;
 	int err;
 
+	/* Get reference to entropy device */
+	dev_entropy = device_get_binding(CONFIG_ENTROPY_NAME);
+	if (!dev_entropy) {
+		return -ENODEV;
+	}
+
 	/* Initialise LLL internals */
 	event.curr.abort_cb = NULL;
 
 	/* Initialize LF CLK */
-	clk_k32 = device_get_binding(CONFIG_CLOCK_CONTROL_NRF_K32SRC_DRV_NAME);
+	clk_k32 = device_get_binding(DT_INST_0_NORDIC_NRF_CLOCK_LABEL "_32K");
 	if (!clk_k32) {
 		return -ENODEV;
 	}
@@ -120,12 +132,12 @@ int lll_init(void)
 
 	/* Initialize HF CLK */
 	lll.clk_hf =
-		device_get_binding(CONFIG_CLOCK_CONTROL_NRF_M16SRC_DRV_NAME);
+		device_get_binding(DT_INST_0_NORDIC_NRF_CLOCK_LABEL "_16M");
 	if (!lll.clk_hf) {
 		return -ENODEV;
 	}
 
-	err = _init_reset();
+	err = init_reset();
 	if (err) {
 		return err;
 	}
@@ -149,11 +161,16 @@ int lll_init(void)
 	return 0;
 }
 
+u8_t lll_entropy_get(u8_t len, void *rand)
+{
+	return entropy_get_entropy_isr(dev_entropy, rand, len, 0);
+}
+
 int lll_reset(void)
 {
 	int err;
 
-	err = _init_reset();
+	err = init_reset();
 	if (err) {
 		return err;
 	}
@@ -174,21 +191,9 @@ void lll_resume(void *param)
 	struct lll_event *next = param;
 	int ret;
 
-	if (event.curr.abort_cb) {
-		ret = prepare(next->is_abort_cb, next->abort_cb,
-			      next->prepare_cb, next->prio,
-			      &next->prepare_param, next->is_resume);
-		LL_ASSERT(!ret || ret == -EINPROGRESS);
-
-		return;
-	}
-
-	event.curr.is_abort_cb = next->is_abort_cb;
-	event.curr.abort_cb = next->abort_cb;
-	event.curr.param = next->prepare_param.param;
-
-	ret = next->prepare_cb(&next->prepare_param);
-	LL_ASSERT(!ret);
+	ret = prepare(next->is_abort_cb, next->abort_cb, next->prepare_cb,
+		      next->prio, &next->prepare_param, next->is_resume);
+	LL_ASSERT(!ret || ret == -EINPROGRESS);
 }
 
 void lll_disable(void *param)
@@ -221,7 +226,7 @@ void lll_disable(void *param)
 int lll_prepare_done(void *param)
 {
 #if defined(CONFIG_BT_CTLR_LOW_LAT) && \
-	(CONFIG_BT_CTLR_LLL_PRIO == CONFIG_BT_CTLR_ULL_LOW_PRIO)
+	    (CONFIG_BT_CTLR_LLL_PRIO == CONFIG_BT_CTLR_ULL_LOW_PRIO)
 	u32_t ret;
 
 	/* Ticker Job Silence */
@@ -229,8 +234,8 @@ int lll_prepare_done(void *param)
 				  TICKER_USER_ID_LLL,
 				  ticker_op_job_disable, NULL);
 
-	return ((ret == TICKER_STATUS_SUCCESS) || (ret == TICKER_STATUS_BUSY)) ?
-	       0 : -EFAULT;
+	return ((ret == TICKER_STATUS_SUCCESS) ||
+		(ret == TICKER_STATUS_BUSY)) ? 0 : -EFAULT;
 #else
 	return 0;
 #endif /* CONFIG_BT_CTLR_LOW_LAT */
@@ -240,6 +245,7 @@ int lll_done(void *param)
 {
 	struct lll_event *next = ull_prepare_dequeue_get();
 	struct ull_hdr *ull = NULL;
+	void *evdone;
 	int ret = 0;
 
 	/* Assert if param supplied without a pending prepare to cancel. */
@@ -258,10 +264,12 @@ int lll_done(void *param)
 			ull = HDR_ULL(((struct lll_hdr *)param)->parent);
 		}
 
-#if defined(CONFIG_BT_CTLR_LOW_LAT) && \
-	(CONFIG_BT_CTLR_LLL_PRIO == CONFIG_BT_CTLR_ULL_LOW_PRIO)
-		mayfly_enable(TICKER_USER_ID_LLL, TICKER_USER_ID_ULL_LOW, 1);
-#endif /* CONFIG_BT_CTLR_LOW_LAT */
+		if (IS_ENABLED(CONFIG_BT_CTLR_LOW_LAT) &&
+		    (CONFIG_BT_CTLR_LLL_PRIO == CONFIG_BT_CTLR_ULL_LOW_PRIO)) {
+			mayfly_enable(TICKER_USER_ID_LLL,
+				      TICKER_USER_ID_ULL_LOW,
+				      1);
+		}
 
 		DEBUG_RADIO_CLOSE(0);
 	} else {
@@ -269,7 +277,8 @@ int lll_done(void *param)
 	}
 
 	/* Let ULL know about LLL event done */
-	ull_event_done(ull);
+	evdone = ull_event_done(ull);
+	LL_ASSERT(evdone);
 
 	return ret;
 }
@@ -326,11 +335,11 @@ u32_t lll_evt_offset_get(struct evt_hdr *evt)
 	if (0) {
 #if defined(CONFIG_BT_CTLR_XTAL_ADVANCED)
 	} else if (evt->ticks_xtal_to_start & XON_BITMASK) {
-		return max(evt->ticks_active_to_start,
+		return MAX(evt->ticks_active_to_start,
 			   evt->ticks_preempt_to_start);
 #endif /* CONFIG_BT_CTLR_XTAL_ADVANCED */
 	} else {
-		return max(evt->ticks_active_to_start,
+		return MAX(evt->ticks_active_to_start,
 			   evt->ticks_xtal_to_start);
 	}
 }
@@ -338,11 +347,62 @@ u32_t lll_evt_offset_get(struct evt_hdr *evt)
 u32_t lll_preempt_calc(struct evt_hdr *evt, u8_t ticker_id,
 		       u32_t ticks_at_event)
 {
-	/* TODO: */
+	u32_t ticks_now = ticker_ticks_now_get();
+	u32_t diff;
+
+	diff = ticker_ticks_diff_get(ticks_now, ticks_at_event);
+	diff += HAL_TICKER_CNTR_CMP_OFFSET_MIN;
+	if (!(diff & BIT(HAL_TICKER_CNTR_MSBIT)) &&
+	    (diff > HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_START_US))) {
+		/* TODO: for Low Latency Feature with Advanced XTAL feature.
+		 * 1. Release retained HF clock.
+		 * 2. Advance the radio event to accommodate normal prepare
+		 *    duration.
+		 * 3. Increase the preempt to start ticks for future events.
+		 */
+		return 1;
+	}
+
 	return 0;
 }
 
-static int _init_reset(void)
+void lll_chan_set(u32_t chan)
+{
+	switch (chan) {
+	case 37:
+		radio_freq_chan_set(2);
+		break;
+
+	case 38:
+		radio_freq_chan_set(26);
+		break;
+
+	case 39:
+		radio_freq_chan_set(80);
+		break;
+
+	default:
+		if (chan < 11) {
+			radio_freq_chan_set(4 + (chan * 2U));
+		} else if (chan < 40) {
+			radio_freq_chan_set(28 + ((chan - 11) * 2U));
+		} else {
+			LL_ASSERT(0);
+		}
+		break;
+	}
+
+	radio_whiten_iv_set(chan);
+}
+
+
+u32_t lll_radio_is_idle(void)
+{
+	return radio_is_idle();
+}
+
+
+static int init_reset(void)
 {
 	return 0;
 }
@@ -354,12 +414,14 @@ static int prepare(lll_is_abort_cb_t is_abort_cb, lll_abort_cb_t abort_cb,
 	struct lll_event *p;
 	u8_t idx = UINT8_MAX;
 
+	/* Find the ready prepare in the pipeline */
 	p = ull_prepare_dequeue_iter(&idx);
-	while (p && p->is_aborted) {
+	while (p && (p->is_aborted || p->is_resume)) {
 		p = ull_prepare_dequeue_iter(&idx);
 	}
 
-	if (event.curr.abort_cb || p) {
+	/* Current event active or another prepare is ready in the pipeline */
+	if (event.curr.abort_cb || (p && is_resume)) {
 #if !defined(CONFIG_BT_CTLR_LOW_LAT)
 		u32_t preempt_anchor;
 		struct evt_hdr *evt;
@@ -371,27 +433,25 @@ static int prepare(lll_is_abort_cb_t is_abort_cb, lll_abort_cb_t abort_cb,
 #endif /* CONFIG_BT_CTLR_LOW_LAT */
 		int ret;
 
-#if defined(CONFIG_BT_CTLR_LOW_LAT)
-		/* early abort */
-		if (event.curr.param) {
+		if (IS_ENABLED(CONFIG_BT_CTLR_LOW_LAT) && event.curr.param) {
+			/* early abort */
 			event.curr.abort_cb(NULL, event.curr.param);
 		}
-#endif /* CONFIG_BT_CTLR_LOW_LAT */
 
 		/* Store the next prepare for deferred call */
 		ret = ull_prepare_enqueue(is_abort_cb, abort_cb, prepare_param,
 					  prepare_cb, prio, is_resume);
 		LL_ASSERT(!ret);
 
+#if !defined(CONFIG_BT_CTLR_LOW_LAT)
 		if (is_resume) {
 			return -EINPROGRESS;
 		}
 
-#if !defined(CONFIG_BT_CTLR_LOW_LAT)
 		/* Calc the preempt timeout */
 		evt = HDR_LLL2EVT(prepare_param->param);
 		preempt_anchor = prepare_param->ticks_at_expire;
-		preempt_to = max(evt->ticks_active_to_start,
+		preempt_to = MAX(evt->ticks_active_to_start,
 				 evt->ticks_xtal_to_start) -
 				 evt->ticks_preempt_to_start;
 
@@ -405,8 +465,8 @@ static int prepare(lll_is_abort_cb_t is_abort_cb, lll_abort_cb_t abort_cb,
 				   TICKER_NULL_REMAINDER,
 				   TICKER_NULL_LAZY,
 				   TICKER_NULL_SLOT,
-				   _preempt_ticker_cb, NULL,
-				   NULL, NULL);
+				   preempt_ticker_cb, NULL,
+				   ticker_start_op_cb, NULL);
 		LL_ASSERT((ret == TICKER_STATUS_SUCCESS) ||
 			  (ret == TICKER_STATUS_FAILURE) ||
 			  (ret == TICKER_STATUS_BUSY));
@@ -465,19 +525,30 @@ static int resume_enqueue(lll_prepare_cb_t resume_cb, int resume_prio)
 }
 
 #if !defined(CONFIG_BT_CTLR_LOW_LAT)
-static void _preempt_ticker_cb(u32_t ticks_at_expire, u32_t remainder,
+static void ticker_start_op_cb(u32_t status, void *param)
+{
+	/* NOTE: this callback is present only for addition debug messages
+	 * when needed, else can be dispensed with.
+	 */
+	ARG_UNUSED(param);
+
+	LL_ASSERT((status == TICKER_STATUS_SUCCESS) ||
+		  (status == TICKER_STATUS_FAILURE));
+}
+
+static void preempt_ticker_cb(u32_t ticks_at_expire, u32_t remainder,
 			       u16_t lazy, void *param)
 {
-	static memq_link_t _link;
-	static struct mayfly _mfy = {0, 0, &_link, NULL, _preempt};
+	static memq_link_t link;
+	static struct mayfly mfy = {0, 0, &link, NULL, preempt};
 	u32_t ret;
 
 	ret = mayfly_enqueue(TICKER_USER_ID_ULL_HIGH, TICKER_USER_ID_LLL,
-			     0, &_mfy);
+			     0, &mfy);
 	LL_ASSERT(!ret);
 }
 
-static void _preempt(void *param)
+static void preempt(void *param)
 {
 	struct lll_event *next = ull_prepare_dequeue_get();
 	lll_prepare_cb_t resume_cb;
@@ -490,7 +561,7 @@ static void _preempt(void *param)
 		return;
 	}
 
-	while (next && next->is_resume) {
+	while (next && (next->is_aborted || next->is_resume)) {
 		next = ull_prepare_dequeue_iter(&idx);
 	}
 

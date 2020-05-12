@@ -4,7 +4,7 @@ CMSIS RTOS v2
 ##########################
 
 Cortex-M Software Interface Standard (CMSIS) RTOS is a vendor-independent
-hardware abstraction layer for the ARM Cortex®-M processor series and defines
+hardware abstraction layer for the ARM Cortex-M processor series and defines
 generic tool interfaces. Though it was originally defined for ARM Cortex-M
 microcontrollers alone, it could be easily extended to other microcontrollers
 making it generic. For more information on CMSIS RTOS v2, please refer to the
@@ -16,9 +16,6 @@ Features not supported in Zephyr implementation
 Kernel
    osKernelGetState, osKernelSuspend, osKernelResume, osKernelInitialize
    and osKernelStart are not supported.
-
-Threads
-   osThreadJoin and osThreadDetach are not supported.
 
 Mutex
    osMutexPrioInherit is supported by default and is not configurable,

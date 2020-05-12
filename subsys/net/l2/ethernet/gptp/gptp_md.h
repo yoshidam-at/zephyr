@@ -14,13 +14,11 @@
 #ifndef __GPTP_MD_H
 #define __GPTP_MD_H
 
+#include <net/gptp.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#if defined(CONFIG_NET_GPTP)
-
-#include <net/gptp.h>
 
 /**
  * @brief Media Dependent Sync Information.
@@ -67,8 +65,6 @@ void gptp_md_init_state_machine(void);
  * @param port Number of the port the State Machines needs to be run on.
  */
 void gptp_md_state_machines(int port);
-
-#endif /* CONFIG_NET_GPTP */
 
 #ifdef __cplusplus
 }

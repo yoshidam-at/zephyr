@@ -10,17 +10,18 @@ import os
 # 'string', 'int', 'hex', 'bool'
 
 doc_mode = os.environ.get('KCONFIG_DOC_MODE') == "1"
-bin_dir = os.environ.get('PROJECT_BINARY_DIR')
-conf_file = os.path.join(bin_dir, 'include', 'generated',
-                         'generated_dts_board.conf') if bin_dir else None
 
 dt_defines = {}
-if (not doc_mode) and conf_file and os.path.isfile(conf_file):
-    with open(conf_file, 'r', encoding='utf-8') as fd:
-        for line in fd:
-            if '=' in line:
-                define, val = line.split('=')
-                dt_defines[define] = val.strip()
+if not doc_mode:
+    # The env var 'GENERATED_DTS_BOARD_CONF' must be set unless we are in
+    # doc mode
+    GENERATED_DTS_BOARD_CONF = os.environ['GENERATED_DTS_BOARD_CONF']
+    if os.path.isfile(GENERATED_DTS_BOARD_CONF):
+        with open(GENERATED_DTS_BOARD_CONF, 'r', encoding='utf-8') as fd:
+            for line in fd:
+                if '=' in line:
+                    define, val = line.split('=', 1)
+                    dt_defines[define] = val.strip()
 
 def _dt_units_to_scale(unit):
     if not unit:
@@ -35,7 +36,8 @@ def _dt_units_to_scale(unit):
 def dt_int_val(kconf, _, name, unit=None):
     """
     This function looks up 'name' in the DTS generated "conf" style database
-    and if its found it will return the value as an decimal integer.  The
+    (generated_dts_board.conf in <build_dir>/zephyr/include/generated/)
+    and if it's found it will return the value as an decimal integer.  The
     function will divide the value based on 'unit':
         None        No division
         'k' or 'K'  divide by 1024 (1 << 10)
@@ -57,7 +59,8 @@ def dt_int_val(kconf, _, name, unit=None):
 def dt_hex_val(kconf, _, name, unit=None):
     """
     This function looks up 'name' in the DTS generated "conf" style database
-    and if its found it will return the value as an hex integer.  The
+    (generated_dts_board.conf in <build_dir>/zephyr/include/generated/)
+    and if it's found it will return the value as an hex integer.  The
     function will divide the value based on 'unit':
         None        No division
         'k' or 'K'  divide by 1024 (1 << 10)
@@ -76,8 +79,20 @@ def dt_hex_val(kconf, _, name, unit=None):
 
     return hex(d)
 
+def dt_str_val(kconf, _, name):
+    """
+    This function looks up 'name' in the DTS generated "conf" style database
+    (generated_dts_board.conf in <build_dir>/zephyr/include/generated/)
+    and if it's found it will return the value as string.  If it's not found we
+    return an empty string.
+    """
+    if doc_mode or name not in dt_defines:
+        return ""
+
+    return dt_defines[name].strip('"')
 
 functions = {
         "dt_int_val": (dt_int_val, 1, 2),
         "dt_hex_val": (dt_hex_val, 1, 2),
+        "dt_str_val": (dt_str_val, 1, 1),
 }

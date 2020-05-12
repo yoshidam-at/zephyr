@@ -4,19 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define TIFS_US 150
-
-/* Macro to return PDU time */
-#if defined(CONFIG_BT_CTLR_PHY_CODED)
-#define PKT_US(octets, phy) \
-	(((phy) & BIT(2)) ? \
-	 (80 + 256 + 16 + 24 + ((((2 + (octets) + 4) * 8) + 24 + 3) * 8)) : \
-	 (((octets) + 14) * 8 / BIT(((phy) & 0x03) >> 1)))
-#else /* !CONFIG_BT_CTLR_PHY_CODED */
-#define PKT_US(octets, phy) \
-	(((octets) + 14) * 8 / BIT(((phy) & 0x03) >> 1))
-#endif /* !CONFIG_BT_CTLR_PHY_CODED */
-
+/* Range Delay
+ * Refer to BT Spec v5.1 Vol.6, Part B, Section 4.2.3 Range Delay
+ * "4 / 1000" is an approximation of the propagation time in us of the
+ * signal to travel 1 meter.
+ */
+#define RANGE_DISTANCE 1000 /* meters */
+#define RANGE_DELAY_US (2 * RANGE_DISTANCE * 4 / 1000)
 
 static inline u32_t addr_us_get(u8_t phy)
 {

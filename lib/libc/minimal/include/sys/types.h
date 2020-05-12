@@ -8,6 +8,11 @@
 #ifndef ZEPHYR_LIB_LIBC_MINIMAL_INCLUDE_SYS_TYPES_H_
 #define ZEPHYR_LIB_LIBC_MINIMAL_INCLUDE_SYS_TYPES_H_
 
+#include <stdint.h>
+#include <sys/_types.h>
+
+typedef unsigned int mode_t;
+
 #if !defined(__ssize_t_defined)
 #define __ssize_t_defined
 
@@ -35,6 +40,30 @@ typedef int off_t;
 #else
 #error "The minimal libc library does not recognize the architecture!\n"
 #endif
+
+#endif
+
+#if !defined(__time_t_defined)
+#define __time_t_defined
+typedef _TIME_T_ time_t;
+#endif
+
+#if !defined(__suseconds_t_defined)
+#define __suseconds_t_defined
+typedef _SUSECONDS_T_ suseconds_t;
+#endif
+
+#if !defined(__mem_word_t_defined)
+#define __mem_word_t_defined
+
+/*
+ * The mem_word_t should match the optimal memory access word width
+ * on the target platform. Here we defaults it to uintptr_t.
+ */
+
+typedef uintptr_t mem_word_t;
+
+#define Z_MEM_WORD_T_WIDTH __INTPTR_WIDTH__
 
 #endif
 

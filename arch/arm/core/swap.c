@@ -36,21 +36,17 @@ extern const int _k_neg_eagain;
  * Given that __swap() is called to effect a cooperative context switch,
  * only the caller-saved integer registers need to be saved in the thread of the
  * outgoing thread. This is all performed by the hardware, which stores it in
- * its exception stack frame, created when handling the svc exception.
+ * its exception stack frame, created when handling the __pendsv exception.
  *
  * On ARMv6-M, the intlock key is represented by the PRIMASK register,
  * as BASEPRI is not available.
  *
  * @return -EAGAIN, or a return value set by a call to
- * _set_thread_return_value()
+ * z_set_thread_return_value()
  *
  */
 int __swap(int key)
 {
-#ifdef CONFIG_USERSPACE
-	/* Save off current privilege mode */
-	_current->arch.mode = __get_CONTROL() & CONTROL_nPRIV_Msk;
-#endif
 #ifdef CONFIG_EXECUTION_BENCHMARKING
 	read_timer_start_of_swap();
 #endif
@@ -59,11 +55,19 @@ int __swap(int key)
 	_current->arch.basepri = key;
 	_current->arch.swap_return_value = _k_neg_eagain;
 
+#if defined(CONFIG_CPU_CORTEX_M)
 	/* set pending bit to make sure we will take a PendSV exception */
 	SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
 
 	/* clear mask or enable all irqs to take a pendsv */
 	irq_unlock(0);
+#elif defined(CONFIG_CPU_CORTEX_R)
+	cortex_r_svc();
+	irq_unlock(key);
+#endif
 
+	/* Context switch is performed here. Returning implies the
+	 * thread has been context-switched-in again.
+	 */
 	return _current->arch.swap_return_value;
 }

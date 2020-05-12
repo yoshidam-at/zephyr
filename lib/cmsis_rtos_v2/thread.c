@@ -8,8 +8,8 @@
 #include <string.h>
 #include <kernel_structs.h>
 #include <ksched.h>
-#include <atomic.h>
-#include <misc/stack.h>
+#include <sys/atomic.h>
+#include <debug/stack.h>
 #include "wrapper.h"
 
 static const osThreadAttr_t init_thread_attrs = {
@@ -52,9 +52,13 @@ static inline u32_t cmsis_to_zephyr_priority(u32_t c_prio)
 
 static void zephyr_thread_wrapper(void *arg1, void *arg2, void *arg3)
 {
+	struct cv2_thread *tid = arg2;
 	void * (*fun_ptr)(void *) = arg3;
 
 	fun_ptr(arg1);
+
+	tid->has_joined = TRUE;
+	k_sem_give(&tid->join_guard);
 }
 
 void *is_cmsis_rtos_v2_thread(void *thread_id)
@@ -157,7 +161,7 @@ osThreadId_t osThreadNew(osThreadFunc_t threadfunc, void *arg,
 	this_thread_num = atomic_inc((atomic_t *)&thread_num);
 
 	tid = &cv2_thread_pool[this_thread_num];
-	tid->state = attr->attr_bits;
+	tid->attr_bits = attr->attr_bits;
 
 	if (attr->stack_mem == NULL) {
 		__ASSERT(CONFIG_CMSIS_V2_THREAD_DYNAMIC_STACK_SIZE > 0,
@@ -174,22 +178,24 @@ osThreadId_t osThreadNew(osThreadFunc_t threadfunc, void *arg,
 	k_poll_signal_init(&tid->poll_signal);
 	k_poll_event_init(&tid->poll_event, K_POLL_TYPE_SIGNAL,
 			  K_POLL_MODE_NOTIFY_ONLY, &tid->poll_signal);
-	tid->signal_results = 0;
+	tid->signal_results = 0U;
 
 	/* TODO: Do this somewhere only once */
-	if (one_time == 0) {
+	if (one_time == 0U) {
 		sys_dlist_init(&thread_list);
-		one_time = 1;
+		one_time = 1U;
 	}
 
 	sys_dlist_append(&thread_list, &tid->node);
 
+	k_sem_init(&tid->join_guard, 0, 1);
+	tid->has_joined = FALSE;
+
 	(void)k_thread_create(&tid->z_thread,
 			      stack, stack_size,
 			      (k_thread_entry_t)zephyr_thread_wrapper,
-			      (void *)arg, NULL, threadfunc,
+			      (void *)arg, tid, threadfunc,
 			      prio, 0, K_NO_WAIT);
-
 
 	if (attr->name == NULL) {
 		strncpy(tid->name, init_thread_attrs.name,
@@ -357,7 +363,7 @@ uint32_t osThreadGetStackSpace(osThreadId_t thread_id)
 {
 	struct cv2_thread *tid = (struct cv2_thread *)thread_id;
 	u32_t size = tid->z_thread.stack_info.size;
-	u32_t unused = 0;
+	u32_t unused = 0U;
 
 	__ASSERT(tid, "");
 	__ASSERT(is_cmsis_rtos_v2_thread(tid), "");
@@ -418,6 +424,77 @@ osStatus_t osThreadResume(osThreadId_t thread_id)
 }
 
 /**
+ * @brief Detach a thread (thread storage can be reclaimed when thread
+ *        terminates).
+ */
+osStatus_t osThreadDetach(osThreadId_t thread_id)
+{
+	struct cv2_thread *tid = (struct cv2_thread *)thread_id;
+
+	if ((tid == NULL) || (is_cmsis_rtos_v2_thread(tid) == NULL)) {
+		return osErrorParameter;
+	}
+
+	if (k_is_in_isr()) {
+		return osErrorISR;
+	}
+
+	if (_is_thread_cmsis_inactive(&tid->z_thread)) {
+		return osErrorResource;
+	}
+
+	__ASSERT(tid->attr_bits != osThreadDetached,
+		 "Thread already detached, behaviour undefined.");
+
+	tid->attr_bits = osThreadDetached;
+
+	k_sem_give(&tid->join_guard);
+
+	return osOK;
+}
+
+/**
+ * @brief Wait for specified thread to terminate.
+ */
+osStatus_t osThreadJoin(osThreadId_t thread_id)
+{
+	struct cv2_thread *tid = (struct cv2_thread *)thread_id;
+	osStatus_t status = osError;
+
+	if ((tid == NULL) || (is_cmsis_rtos_v2_thread(tid) == NULL)) {
+		return osErrorParameter;
+	}
+
+	if (k_is_in_isr()) {
+		return osErrorISR;
+	}
+
+	if (_is_thread_cmsis_inactive(&tid->z_thread)) {
+		return osErrorResource;
+	}
+
+	if (tid->attr_bits != osThreadJoinable) {
+		return osErrorResource;
+	}
+
+	if (!tid->has_joined) {
+		if (k_sem_take(&tid->join_guard, K_FOREVER) != 0) {
+			__ASSERT(0, "Failed to take from join guard.");
+		}
+
+		k_sem_give(&tid->join_guard);
+	}
+
+	if (tid->has_joined && (tid->attr_bits == osThreadJoinable)) {
+		status = osOK;
+	} else {
+		status = osErrorResource;
+	}
+
+	return status;
+}
+
+/**
  * @brief Terminate execution of current running thread.
  */
 __NO_RETURN void osThreadExit(void)
@@ -426,6 +503,8 @@ __NO_RETURN void osThreadExit(void)
 
 	__ASSERT(!k_is_in_isr(), "");
 	tid = osThreadGetId();
+
+	k_sem_give(&tid->join_guard);
 
 	k_thread_abort((k_tid_t)&tid->z_thread);
 
@@ -451,6 +530,8 @@ osStatus_t osThreadTerminate(osThreadId_t thread_id)
 		return osErrorResource;
 	}
 
+	k_sem_give(&tid->join_guard);
+
 	k_thread_abort((k_tid_t)&tid->z_thread);
 	return osOK;
 }
@@ -462,11 +543,11 @@ osStatus_t osThreadTerminate(osThreadId_t thread_id)
 uint32_t osThreadGetCount(void)
 {
 	struct k_thread *thread;
-	u32_t count = 0;
+	u32_t count = 0U;
 
 	__ASSERT(!k_is_in_isr(), "");
 	for (thread = _kernel.threads; thread; thread = thread->next_thread) {
-		if (get_cmsis_thread_id(thread) && _is_thread_queued(thread)) {
+		if (get_cmsis_thread_id(thread) && z_is_thread_queued(thread)) {
 			count++;
 		}
 	}
@@ -480,7 +561,7 @@ uint32_t osThreadGetCount(void)
 uint32_t osThreadEnumerate(osThreadId_t *thread_array, uint32_t array_items)
 {
 	struct k_thread *thread;
-	u32_t count = 0;
+	u32_t count = 0U;
 	osThreadId_t tid;
 
 	__ASSERT(!k_is_in_isr(), "");

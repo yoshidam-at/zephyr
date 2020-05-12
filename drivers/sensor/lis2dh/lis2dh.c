@@ -6,15 +6,15 @@
 
 
 #include <init.h>
-#include <misc/byteorder.h>
-#include <misc/__assert.h>
+#include <sys/byteorder.h>
+#include <sys/__assert.h>
 #include <logging/log.h>
 
 #define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
 LOG_MODULE_REGISTER(lis2dh);
 #include "lis2dh.h"
 
-#if defined(DT_ST_LIS2DH_0_BUS_SPI)
+#if defined(DT_ST_LIS2DH_BUS_SPI)
 int lis2dh_spi_access(struct lis2dh_data *ctx, u8_t cmd,
 		      void *data, size_t length)
 {
@@ -172,7 +172,7 @@ static int lis2dh_freq_to_odr_val(u16_t freq)
 	size_t i;
 
 	/* An ODR of 0 Hz is not allowed */
-	if (freq == 0) {
+	if (freq == 0U) {
 		return -EINVAL;
 	}
 
@@ -202,7 +202,7 @@ static int lis2dh_acc_odr_set(struct device *dev, u16_t freq)
 	}
 
 	/* some odr values cannot be set in certain power modes */
-	if ((value & LIS2DH_LP_EN_BIT_MASK) == 0 && odr == LIS2DH_ODR_8) {
+	if ((value & LIS2DH_LP_EN_BIT_MASK) == 0U && odr == LIS2DH_ODR_8) {
 		return -ENOTSUP;
 	}
 
@@ -341,7 +341,7 @@ int lis2dh_init(struct device *dev)
 	/* set full scale range and store it for later conversion */
 	lis2dh->scale = LIS2DH_ACCEL_SCALE(1 << (LIS2DH_FS_IDX + 1));
 	status = lis2dh_reg_write_byte(dev, LIS2DH_REG_CTRL4,
-				       LIS2DH_FS_BITS);
+				       LIS2DH_FS_BITS | LIS2DH_HR_BIT);
 	if (status < 0) {
 		LOG_ERR("Failed to set full scale ctrl register.");
 		return status;
@@ -367,6 +367,6 @@ int lis2dh_init(struct device *dev)
 
 static struct lis2dh_data lis2dh_driver;
 
-DEVICE_AND_API_INIT(lis2dh, DT_ST_LIS2DH_0_LABEL, lis2dh_init, &lis2dh_driver,
+DEVICE_AND_API_INIT(lis2dh, DT_INST_0_ST_LIS2DH_LABEL, lis2dh_init, &lis2dh_driver,
 		    NULL, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,
 		    &lis2dh_driver_api);

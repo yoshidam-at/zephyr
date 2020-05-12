@@ -7,7 +7,7 @@
 #include <kernel.h>
 #include <arch/cpu.h>
 #include <device.h>
-#include <system_timer.h>
+#include <drivers/timer/system_timer.h>
 #include <altera_common.h>
 
 #include "altera_avalon_timer_regs.h"
@@ -59,7 +59,7 @@ int z_clock_driver_init(struct device *device)
 	return 0;
 }
 
-u32_t _timer_cycle_get_32(void)
+u32_t z_timer_cycle_get_32(void)
 {
 	/* Per the Altera Embedded IP Peripherals guide, you cannot
 	 * use a timer instance for both the system clock and timestamps

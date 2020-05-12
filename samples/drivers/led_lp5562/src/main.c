@@ -6,15 +6,15 @@
 
 #include <device.h>
 #include <errno.h>
-#include <led.h>
-#include <misc/util.h>
+#include <drivers/led.h>
+#include <sys/util.h>
 #include <zephyr.h>
 
 #define LOG_LEVEL 4
 #include <logging/log.h>
 LOG_MODULE_REGISTER(main);
 
-#define LED_DEV_NAME DT_TI_LP5562_0_LABEL
+#define LED_DEV_NAME DT_INST_0_TI_LP5562_LABEL
 #define NUM_LEDS 4
 #define BLINK_DELAY_ON 500
 #define BLINK_DELAY_OFF 500
@@ -53,7 +53,7 @@ static u8_t colors[COLORS_TO_SHOW][VALUES_PER_COLOR] = {
  */
 static inline u8_t scale_color_to_percent(u8_t hex)
 {
-	return (hex * 100) / 0xFF;
+	return (hex * 100U) / 0xFF;
 }
 
 /*

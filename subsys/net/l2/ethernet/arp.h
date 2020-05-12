@@ -7,14 +7,14 @@
 #ifndef __ARP_H
 #define __ARP_H
 
+#if defined(CONFIG_NET_ARP)
+
+#include <sys/slist.h>
+#include <net/ethernet.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#if defined(CONFIG_NET_ARP)
-
-#include <misc/slist.h>
-#include <net/ethernet.h>
 
 /**
  * @brief Address resolution (ARP) library
@@ -51,7 +51,7 @@ enum net_verdict net_arp_input(struct net_pkt *pkt,
 
 struct arp_entry {
 	sys_snode_t node;
-	s64_t req_start;
+	u32_t req_start;
 	struct net_if *iface;
 	struct in_addr ip;
 	union {
@@ -71,6 +71,10 @@ void net_arp_init(void);
  * @}
  */
 
+#ifdef __cplusplus
+}
+#endif
+
 #else /* CONFIG_NET_ARP */
 #define net_arp_prepare(_kt, _u1, _u2) _kt
 #define net_arp_input(...) NET_OK
@@ -78,9 +82,5 @@ void net_arp_init(void);
 #define net_arp_init(...)
 
 #endif /* CONFIG_NET_ARP */
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* __ARP_H */

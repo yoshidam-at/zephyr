@@ -9,14 +9,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sensor.h>
+#include <drivers/sensor.h>
 #include <kernel.h>
 #include <device.h>
 #include <init.h>
-#include <misc/byteorder.h>
-#include <misc/__assert.h>
+#include <sys/byteorder.h>
+#include <sys/__assert.h>
 
-#include <gpio.h>
+#include <drivers/gpio.h>
 #include <logging/log.h>
 
 #include "bmc150_magn.h"
@@ -63,7 +63,7 @@ static int bmc150_magn_set_power_mode(struct device *dev,
 					!state) < 0) {
 			return -EIO;
 		}
-		k_busy_wait(5 * USEC_PER_MSEC);
+		k_busy_wait(USEC_PER_MSEC * 5U);
 
 		return 0;
 	case BMC150_MAGN_POWER_MODE_SLEEP:

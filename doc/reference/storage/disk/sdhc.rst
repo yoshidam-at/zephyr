@@ -24,20 +24,20 @@ MMC and SDSC (<= 2 GiB) cards are not supported and will be ignored.
 Enabling
 ********
 
-For example, this device tree fragment adds an SDHC card slot on `spi1`,
-uses `PA27` for chip select, and runs the SPI bus at 24 MHz once the
+For example, this device tree fragment adds an SDHC card slot on ``spi1``,
+uses ``PA27`` for chip select, and runs the SPI bus at 24 MHz once the
 SDHC card has been initialized:
 
 .. code-block:: none
 
     &spi1 {
-            status = "ok";
+            status = "okay";
             cs-gpios = <&porta 27 0>;
 
             sdhc0: sdhc@0 {
                     compatible = "zephyr,mmc-spi-slot";
                     reg = <0>;
-                    status = "ok";
+                    status = "okay";
                     label = "SDHC0";
                     spi-max-frequency = <24000000>;
             };
@@ -50,5 +50,5 @@ The SDHC card will be automatically detected and initialized by the
 filesystem driver when the board boots.
 
 To read and write files and directories, see the :ref:`file_system` in
-:file:`include/fs.h` such as :c:func:`fs_open()`,
+:zephyr_file:`include/fs.h` such as :c:func:`fs_open()`,
 :c:func:`fs_read()`, and :c:func:`fs_write()`.

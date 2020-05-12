@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: Intel SPI Controller
-version: 0.1
 
 description: >
      This is a representation of the Intel SPI controller found on quark x1000.
@@ -18,15 +17,7 @@ properties:
       constraint: "intel,intel-spi"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
-
-...

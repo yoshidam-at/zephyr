@@ -11,9 +11,9 @@
  */
 
 #include <kernel.h>
-#include <drivers/system_timer.h>
-#include <misc/printk.h>
-#include <misc/reboot.h>
+#include <drivers/timer/system_timer.h>
+#include <sys/printk.h>
+#include <power/reboot.h>
 
 extern void sys_arch_reboot(int type);
 extern void sys_clock_disable(void);
@@ -21,7 +21,9 @@ extern void sys_clock_disable(void);
 void sys_reboot(int type)
 {
 	(void)irq_lock();
+#ifdef CONFIG_SYS_CLOCK_EXISTS
 	sys_clock_disable();
+#endif
 
 	sys_arch_reboot(type);
 

@@ -7,13 +7,13 @@
 #include "test_sched.h"
 #define THREADS_NUM     3
 #define DURATION	1
-static K_THREAD_STACK_ARRAY_DEFINE(tstack, THREADS_NUM, STACK_SIZE);
+
+BUILD_ASSERT(THREADS_NUM <= MAX_NUM_THREAD);
 
 static struct thread_data tdata[THREADS_NUM];
 static struct k_thread tthread[THREADS_NUM];
 static int old_prio, init_prio;
 
-K_THREAD_STACK_DEFINE(t_stack, STACK_SIZE);
 struct k_thread t;
 
 K_SEM_DEFINE(pend_sema, 0, 1);
@@ -22,13 +22,13 @@ struct k_timer timer;
 
 static void thread_entry(void *p1, void *p2, void *p3)
 {
-	int sleep_ms = (int)p2;
+	int sleep_ms = POINTER_TO_INT(p2);
 
 	if (sleep_ms > 0) {
 		k_sleep(sleep_ms);
 	}
 
-	int tnum = (int)p1;
+	int tnum = POINTER_TO_INT(p1);
 
 	tdata[tnum].executed = 1;
 }
@@ -55,9 +55,10 @@ static void setup_threads(void)
 static void spawn_threads(int sleep_sec)
 {
 	for (int i = 0; i < THREADS_NUM; i++) {
-		tdata[i].tid = k_thread_create(&tthread[i], tstack[i],
+		tdata[i].tid = k_thread_create(&tthread[i], tstacks[i],
 					       STACK_SIZE, thread_entry,
-					       (void *)i, (void *)sleep_sec,
+					       INT_TO_POINTER(i),
+					       INT_TO_POINTER(sleep_sec),
 					       NULL, tdata[i].priority, 0, 0);
 	}
 }
@@ -208,7 +209,7 @@ void test_pending_thread_wakeup(void)
 	k_thread_priority_set(k_current_get(), K_PRIO_PREEMPT(1));
 
 	/* Create a thread which waits for semaphore */
-	k_tid_t tid = k_thread_create(&t, t_stack, STACK_SIZE,
+	k_tid_t tid = k_thread_create(&t, tstack, STACK_SIZE,
 				      (k_thread_entry_t)coop_thread,
 				      NULL, NULL, NULL,
 				      K_PRIO_COOP(1), 0, 0);
@@ -239,6 +240,7 @@ void test_pending_thread_wakeup(void)
  */
 void test_time_slicing_preemptible(void)
 {
+#ifdef CONFIG_TIMESLICING
 	/* set current thread to a preemptible priority */
 	init_prio = 0;
 	setup_threads();
@@ -257,6 +259,9 @@ void test_time_slicing_preemptible(void)
 	/* restore environment */
 	k_sched_time_slice_set(0, 0); /* disable time slice */
 	teardown_threads();
+#else /* CONFIG_TIMESLICING */
+	ztest_test_skip();
+#endif /* CONFIG_TIMESLICING */
 }
 
 /**
@@ -274,6 +279,7 @@ void test_time_slicing_preemptible(void)
  */
 void test_time_slicing_disable_preemptible(void)
 {
+#ifdef CONFIG_TIMESLICING
 	/* set current thread to a preemptible priority */
 	init_prio = 0;
 	setup_threads();
@@ -289,6 +295,9 @@ void test_time_slicing_disable_preemptible(void)
 	}
 	/* restore environment */
 	teardown_threads();
+#else /* CONFIG_TIMESLICING */
+	ztest_test_skip();
+#endif /* CONFIG_TIMESLICING */
 }
 
 /**
@@ -357,6 +366,55 @@ void test_unlock_preemptible(void)
 }
 
 /**
+ * @brief Validate nested k_sched_lock() and k_sched_unlock()
+ *
+ * @details In a preemptive thread, lock the scheduler twice and
+ * create a cooperative thread.  Call k_sched_unlock() and check the
+ * cooperative thread haven't executed.  Unlock it again to see the
+ * thread have executed this time.
+ *
+ * @see k_sched_lock(), k_sched_unlock()
+ *
+ * @ingroup kernel_sched_tests
+ */
+void test_unlock_nested_sched_lock(void)
+{
+	/* set current thread to a preemptible priority */
+	init_prio = 0;
+	setup_threads();
+
+	/* take the scheduler lock twice */
+	k_sched_lock();
+	k_sched_lock();
+
+	/* spawn threads without wait */
+	spawn_threads(0);
+
+	/* do critical thing */
+	k_busy_wait(100000);
+
+	/* unlock once; this shouldn't let other threads to run */
+	k_sched_unlock();
+
+	/* checkpoint: no threads get executed */
+	for (int i = 0; i < THREADS_NUM; i++) {
+		zassert_true(tdata[i].executed == 0, NULL);
+	}
+
+	/* unlock another; this let the higher thread to run */
+	k_sched_unlock();
+
+	/* checkpoint: higher threads NOT get executed */
+	zassert_true(tdata[0].executed == 1, NULL);
+	for (int i = 1; i < THREADS_NUM; i++) {
+		zassert_true(tdata[i].executed == 0, NULL);
+	}
+
+	/* restore environment */
+	teardown_threads();
+}
+
+/**
  * @brief validate k_wakeup() in some corner scenario
  * @details trigger a timer and after expiration of timer
  * call k_wakeup(), even the thread is not in sleep state neither
@@ -368,7 +426,7 @@ void test_unlock_preemptible(void)
  */
 void test_wakeup_expired_timer_thread(void)
 {
-	k_tid_t tid = k_thread_create(&tthread[0], t_stack, STACK_SIZE,
+	k_tid_t tid = k_thread_create(&tthread[0], tstack, STACK_SIZE,
 					thread_handler, NULL, NULL, NULL,
 					K_PRIO_PREEMPT(0), 0, 0);
 	k_sem_take(&timer_sema, K_FOREVER);

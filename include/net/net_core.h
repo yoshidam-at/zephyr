@@ -13,11 +13,16 @@
 #ifndef ZEPHYR_INCLUDE_NET_NET_CORE_H_
 #define ZEPHYR_INCLUDE_NET_NET_CORE_H_
 
+#include <stdbool.h>
+#include <string.h>
+
+#include <logging/log.h>
+#include <sys/__assert.h>
+#include <kernel.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <stdbool.h>
 
 /**
  * @brief Networking
@@ -33,47 +38,56 @@ extern "C" {
  * @{
  */
 
-/* Network subsystem logging helpers */
-#include <logging/log.h>
+/** @cond INTERNAL_HIDDEN */
 
+/* Network subsystem logging helpers */
 #define NET_DBG(fmt, ...) LOG_DBG("(%p): " fmt, k_current_get(), \
 				  ##__VA_ARGS__)
 #define NET_ERR(fmt, ...) LOG_ERR(fmt, ##__VA_ARGS__)
 #define NET_WARN(fmt, ...) LOG_WRN(fmt, ##__VA_ARGS__)
 #define NET_INFO(fmt, ...) LOG_INF(fmt,  ##__VA_ARGS__)
 
-#include <misc/__assert.h>
-
 #define NET_ASSERT(cond) __ASSERT_NO_MSG(cond)
 #define NET_ASSERT_INFO(cond, fmt, ...) __ASSERT(cond, fmt, ##__VA_ARGS__)
 
-#include <kernel.h>
+/** @endcond */
 
 struct net_buf;
 struct net_pkt;
 struct net_context;
 struct net_if;
 
-#include <string.h>
-
 /**
  * @brief Net Verdict
  */
 enum net_verdict {
-	NET_OK,		/** Packet has been taken care of */
-	NET_CONTINUE,	/** Packet has not been touched,
-			    other part should decide about its fate */
-	NET_DROP,	/** Packet must be dropped */
+	/** Packet has been taken care of. */
+	NET_OK,
+	/** Packet has not been touched, other part should decide about its
+	 * fate.
+	 */
+	NET_CONTINUE,
+	/** Packet must be dropped. */
+	NET_DROP,
 };
 
-/* Called by lower network stack when a network packet has been received */
+/**
+ * @brief Called by lower network stack or network device driver when
+ * a network packet has been received. The function will push the packet up in
+ * the network stack for further processing.
+ *
+ * @param iface Network interface where the packet was received.
+ * @param pkt Network packet data.
+ *
+ * @return 0 if ok, <0 if error.
+ */
 int net_recv_data(struct net_if *iface, struct net_pkt *pkt);
 
 /**
  * @brief Send data to network.
  *
  * @details Send data to network. This should not be used normally by
- * applications as it requires that the pktfer and fragments are properly
+ * applications as it requires that the network packet is properly
  * constructed.
  *
  * @param pkt Network packet.
@@ -83,6 +97,7 @@ int net_recv_data(struct net_if *iface, struct net_pkt *pkt);
  */
 int net_send_data(struct net_pkt *pkt);
 
+/** @cond INTERNAL_HIDDEN */
 /*
  * The net_stack_info struct needs to be aligned to 32 byte boundary,
  * otherwise the __net_stack_end will point to wrong location and looping
@@ -168,9 +183,9 @@ struct net_stack_info {
 
 #define NET_STACK_DEFINE_EMBEDDED(name, size) char name[size]
 
-/** @cond ignore */
 #if defined(CONFIG_INIT_STACKS)
-#include <misc/stack.h>
+/* Legacy case: retain containing extern "C" with C++ */
+#include <debug/stack.h>
 
 static inline void net_analyze_stack_get_values(const char *stack,
 						size_t size,
@@ -189,7 +204,6 @@ void net_analyze_stack(const char *name, const char *stack, size_t size);
 #define net_analyze_stack(...)
 #define net_analyze_stack_get_values(...)
 #endif
-/* @endcond */
 
 /* Some helper defines for traffic class support */
 #if defined(CONFIG_NET_TC_TX_COUNT) && defined(CONFIG_NET_TC_RX_COUNT)
@@ -206,6 +220,8 @@ void net_analyze_stack(const char *name, const char *stack, size_t size);
 #define NET_TC_RX_COUNT 1
 #define NET_TC_COUNT 1
 #endif /* CONFIG_NET_TC_TX_COUNT && CONFIG_NET_TC_RX_COUNT */
+
+/* @endcond */
 
 /**
  * @}

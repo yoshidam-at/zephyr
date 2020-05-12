@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: Kinetis RTC
-version: 0.1
 
 description: >
     This binding gives a base representation of the Kinetis RTC
@@ -18,8 +17,4 @@ properties:
       constraint: "nxp,kinetis-rtc"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
-...

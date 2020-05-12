@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Intel Corporation
+ * Copyright (c) 2019 Intel Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -25,6 +25,7 @@ OUTPUT_ARCH(xtensa)
 
 #define RAMABLE_REGION ram :ram_phdr
 #define ROMABLE_REGION ram :ram_phdr
+#define LPRAM_REGION lpram
 
 MEMORY
 {
@@ -105,6 +106,9 @@ MEMORY
 	org = IDT_BASE,
 	len = IDT_SIZE
 #endif
+  lpram :
+	org = LPRAM_BASE,
+	len = LPRAM_SIZE
 }
 
 PHDRS
@@ -155,7 +159,27 @@ _memmap_cacheattr_bp_strict = 0x22F22FFF;
 _memmap_cacheattr_wb_allvalid = 0x44224222;
 _memmap_cacheattr_wt_allvalid = 0x11221222;
 _memmap_cacheattr_bp_allvalid = 0x22222222;
-_memmap_cacheattr_intel_s1000 = 0xf2ff4242;
+
+/*
+ * Cache attributes for memory addresses:
+ * (Each 4 bits correspond to 512MB of memory)
+ *
+ * 0x00000000 - 0x1FFFFFFF (bit  0 -  3) : Bypass cache
+ *                                         (region for hardware registers)
+ * 0x20000000 - 0x3FFFFFFF (bit  4 -  7) : No access
+ * 0x40000000 - 0x5FFFFFFF (bit  8 - 11) : No access
+ * 0x60000000 - 0x7FFFFFFF (bit 12 - 15) : No access
+ * 0x80000000 - 0x9FFFFFFF (bit 16 - 19) : Bypass cache
+ * 0xA0000000 - 0xBFFFFFFF (bit 20 - 23) : Cached, write-through
+ * 0xC0000000 - 0xDFFFFFFF (bit 24 - 27) : Bypass cache
+ * 0xE0000000 - 0xFFFFFFFF (bit 28 - 31) : Cached, write-through
+ *
+ * Note that this is both for instruction and data caches,
+ * as cacheattr_set macro sets them both to the same set of
+ * attributes.
+ */
+_memmap_cacheattr_intel_s1000 = 0x1212fff2;
+
 PROVIDE(_memmap_cacheattr_reset = _memmap_cacheattr_intel_s1000);
 SECTIONS
 {
@@ -413,6 +437,13 @@ SECTIONS
   _end = ALIGN(8);
   PROVIDE(end = ALIGN(8));
   __stack = DT_L2_SRAM_BASE + DT_L2_SRAM_SIZE;
+  /* dma buffers */
+  .lpbuf (NOLOAD): ALIGN(4)
+  {
+    _dma_buf_start = ABSOLUTE(.);
+    *(.dma_buffers)
+    _dma_buf_end = ABSOLUTE(.);
+  } >LPRAM_REGION
   .comment  0 :  { *(.comment) }
   .debug 0 : { *(.debug) }
   .line 0 : { *(.line) }

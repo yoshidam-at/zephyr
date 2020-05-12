@@ -14,7 +14,6 @@
  */
 
 #include <kernel.h>
-#include <arch/cpu.h>
 
 #include <stdio.h>
 #include <zephyr/types.h>
@@ -24,13 +23,13 @@
 #include <device.h>
 #include <init.h>
 
-#include <uart.h>
-#include <console/console.h>
-#include <console/uart_console.h>
+#include <drivers/uart.h>
+#include <drivers/console/console.h>
+#include <drivers/console/uart_console.h>
 #include <toolchain.h>
 #include <linker/sections.h>
-#include <atomic.h>
-#include <misc/printk.h>
+#include <sys/atomic.h>
+#include <sys/printk.h>
 #ifdef CONFIG_UART_CONSOLE_MCUMGR
 #include "mgmt/serial.h"
 #endif
@@ -60,25 +59,6 @@ void uart_console_out_debug_hook_install(uart_console_out_debug_hook_t *hook)
 
 #endif /* CONFIG_UART_CONSOLE_DEBUG_SERVER_HOOKS */
 
-#if 0 /* NOTUSED */
-/**
- *
- * @brief Get a character from UART
- *
- * @return the character or EOF if nothing present
- */
-
-static int console_in(void)
-{
-	unsigned char c;
-
-	if (uart_poll_in(uart_console_dev, &c) < 0) {
-		return EOF;
-	} else {
-		return (int)c;
-	}
-}
-#endif
 
 #if defined(CONFIG_PRINTK) || defined(CONFIG_STDOUT_CONSOLE)
 /**
@@ -192,7 +172,7 @@ static void insert_char(char *pos, char c, u8_t end)
 	/* Echo back to console */
 	uart_poll_out(uart_console_dev, c);
 
-	if (end == 0) {
+	if (end == 0U) {
 		*pos = c;
 		return;
 	}
@@ -217,7 +197,7 @@ static void del_char(char *pos, u8_t end)
 {
 	uart_poll_out(uart_console_dev, '\b');
 
-	if (end == 0) {
+	if (end == 0U) {
 		uart_poll_out(uart_console_dev, ' ');
 		uart_poll_out(uart_console_dev, '\b');
 		return;
@@ -271,10 +251,10 @@ static void handle_ansi(u8_t byte, char *line)
 	if (atomic_test_bit(&esc_state, ESC_ANSI_VAL)) {
 		if (isdigit(byte)) {
 			if (atomic_test_bit(&esc_state, ESC_ANSI_VAL_2)) {
-				ansi_val_2 *= 10;
+				ansi_val_2 *= 10U;
 				ansi_val_2 += byte - '0';
 			} else {
-				ansi_val *= 10;
+				ansi_val *= 10U;
 				ansi_val += byte - '0';
 			}
 			return;

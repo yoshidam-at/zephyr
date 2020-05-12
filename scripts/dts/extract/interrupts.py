@@ -4,6 +4,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+# NOTE: This file is part of the old device tree scripts, which will be removed
+# later. They are kept to generate some legacy #defines via the
+# --deprecated-only flag.
+#
+# The new scripts are gen_defines.py, edtlib.py, and dtlib.py.
+
 from extract.globals import *
 from extract.directive import DTDirective
 
@@ -11,53 +17,36 @@ from extract.directive import DTDirective
 # @brief Manage interrupts directives.
 #
 class DTInterrupts(DTDirective):
-
-    def __init__(self):
-        pass
-
-    def _find_parent_irq_node(self, node_address):
-        address = ''
-
-        for comp in node_address.split('/')[1:]:
-            address += '/' + comp
-            if 'interrupt-parent' in reduced[address]['props']:
-                interrupt_parent = reduced[address]['props'].get(
-                    'interrupt-parent')
-
-        return phandles[interrupt_parent]
-
     ##
     # @brief Extract interrupts
     #
-    # @param node_address Address of node owning the
-    #                     interrupts definition.
+    # @param node_path Path to node owning the
+    #                  interrupts definition.
     # @param prop compatible property name
     # @param names (unused)
     # @param def_label Define label string of node owning the
     #                  compatible definition.
     #
-    def extract(self, node_address, prop, names, def_label):
+    def extract(self, node_path, prop, names, def_label):
+        vals = reduced[node_path]['props'][prop]
+        if not isinstance(vals, list):
+            vals = [vals]
 
-        node = reduced[node_address]
+        irq_parent = parent_irq_node(node_path)
+        if not irq_parent:
+            err(node_path + " has no interrupt-parent")
 
-        try:
-            props = list(node['props'].get(prop))
-        except:
-            props = [node['props'].get(prop)]
-
-        irq_parent = self._find_parent_irq_node(node_address)
-
-        l_base = def_label.split('/')
+        l_base = [def_label]
         index = 0
 
-        while props:
+        while vals:
             prop_def = {}
             prop_alias = {}
             l_idx = [str(index)]
 
-            try:
-                name = [convert_string_to_label(names.pop(0))]
-            except:
+            if names:
+                name = [str_to_label(names.pop(0))]
+            else:
                 name = []
 
             cell_yaml = get_binding(irq_parent)
@@ -68,30 +57,58 @@ class DTInterrupts(DTDirective):
                 if l_cell_name == l_cell_prefix:
                     l_cell_name = []
 
-                l_fqn = '_'.join(l_base + l_cell_prefix + l_idx + l_cell_name)
-                prop_def[l_fqn] = props.pop(0)
-                add_compat_alias(node_address,
-                        '_'.join(l_cell_prefix + l_idx + l_cell_name),
-                        l_fqn, prop_alias)
+                full_name = '_'.join(l_base + l_cell_prefix + l_idx + l_cell_name)
+                prop_def[full_name] = vals.pop(0)
+                add_compat_alias(node_path,
+                                 '_'.join(l_cell_prefix + l_idx + l_cell_name),
+                                 full_name, prop_alias)
 
-                if len(name):
+                if name:
                     alias_list = l_base + l_cell_prefix + name + l_cell_name
-                    prop_alias['_'.join(alias_list)] = l_fqn
-                    add_compat_alias(node_address,
-                            '_'.join(l_cell_prefix + name + l_cell_name),
-                            l_fqn, prop_alias)
+                    prop_alias['_'.join(alias_list)] = full_name
+                    add_compat_alias(node_path,
+                                     '_'.join(l_cell_prefix + name + l_cell_name),
+                                     full_name, prop_alias)
 
-                if node_address in aliases:
+                if node_path in aliases:
                     add_prop_aliases(
-                        node_address,
+                        node_path,
                         lambda alias:
-                            '_'.join([convert_string_to_label(alias)] +
-                                     l_cell_prefix + name + l_cell_name),
-                        l_fqn,
+                            '_'.join([str_to_label(alias)] +
+                                     l_cell_prefix + l_idx + l_cell_name),
+                        full_name,
                         prop_alias)
 
+                    if name:
+                        add_prop_aliases(
+                            node_path,
+                            lambda alias:
+                                '_'.join([str_to_label(alias)] +
+                                         l_cell_prefix + name + l_cell_name),
+                            full_name,
+                            prop_alias)
+                    else:
+                        add_prop_aliases(
+                            node_path,
+                            lambda alias:
+                                '_'.join([str_to_label(alias)] +
+                                         l_cell_prefix + name + l_cell_name),
+                            full_name,
+                            prop_alias, True)
+
             index += 1
-            insert_defs(node_address, prop_def, prop_alias)
+            insert_defs(node_path, prop_def, prop_alias)
+
+
+def parent_irq_node(node_path):
+    while node_path:
+        if 'interrupt-parent' in reduced[node_path]['props']:
+            return phandles[reduced[node_path]['props']['interrupt-parent']]
+
+        node_path = get_parent_path(node_path)
+
+    return None
+
 
 ##
 # @brief Management information for interrupts.

@@ -51,24 +51,34 @@ void main(void)
 	/*
 	 * Start the demo.
 	 */
-	for (int i = 1; i <= 6; i++) {
+	for (int i = 1; i <= 8; i++) {
 		unsigned int sleep_seconds;
 
 		switch (i) {
 		case 3:
 			printk("\n<-- Disabling %s state --->\n",
-					STRINGIFY(SYS_POWER_STATE_CPU_LPS_2));
-			sys_pm_ctrl_disable_state(SYS_POWER_STATE_CPU_LPS_2);
+					STRINGIFY(SYS_POWER_STATE_SLEEP_3));
+			sys_pm_ctrl_disable_state(SYS_POWER_STATE_SLEEP_3);
 			break;
 
 		case 5:
 			printk("\n<-- Enabling %s state --->\n",
-				       STRINGIFY(SYS_POWER_STATE_CPU_LPS_2));
-			sys_pm_ctrl_enable_state(SYS_POWER_STATE_CPU_LPS_2);
+				       STRINGIFY(SYS_POWER_STATE_SLEEP_3));
+			sys_pm_ctrl_enable_state(SYS_POWER_STATE_SLEEP_3);
 
 			printk("<-- Disabling %s state --->\n",
-					STRINGIFY(SYS_POWER_STATE_CPU_LPS_1));
-			sys_pm_ctrl_disable_state(SYS_POWER_STATE_CPU_LPS_1);
+					STRINGIFY(SYS_POWER_STATE_SLEEP_2));
+			sys_pm_ctrl_disable_state(SYS_POWER_STATE_SLEEP_2);
+			break;
+
+		case 7:
+			printk("\n<-- Enabling %s state --->\n",
+				       STRINGIFY(SYS_POWER_STATE_SLEEP_2));
+			sys_pm_ctrl_enable_state(SYS_POWER_STATE_SLEEP_2);
+
+			printk("<-- Forcing %s state --->\n",
+				       STRINGIFY(SYS_POWER_STATE_SLEEP_3));
+			sys_pm_force_power_state(SYS_POWER_STATE_SLEEP_3);
 			break;
 
 		default:
@@ -86,6 +96,11 @@ void main(void)
 							sleep_seconds);
 		k_sleep(K_SECONDS(sleep_seconds));
 	}
+
+	/* Restore automatic power management. */
+	printk("\n<-- Forcing %s state --->\n",
+		       STRINGIFY(SYS_POWER_STATE_AUTO));
+	sys_pm_force_power_state(SYS_POWER_STATE_AUTO);
 
 	printk("\nPress BUTTON1 to enter into Deep Sleep state. "
 			"Press BUTTON2 to exit Deep Sleep state\n");

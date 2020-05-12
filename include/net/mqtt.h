@@ -27,6 +27,8 @@
 #include <zephyr.h>
 #include <zephyr/types.h>
 #include <net/tls_credentials.h>
+#include <net/net_ip.h>
+#include <sys/mutex.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -341,17 +343,17 @@ struct mqtt_sec_config {
 /** @brief MQTT transport type. */
 enum mqtt_transport_type {
 	/** Use non secure TCP transport for MQTT connection. */
-	MQTT_TRANSPORT_NON_SECURE = 0x00,
+	MQTT_TRANSPORT_NON_SECURE,
 
 #if defined(CONFIG_MQTT_LIB_TLS)
 	/** Use secure TCP transport (TLS) for MQTT connection. */
-	MQTT_TRANSPORT_SECURE     = 0x01,
+	MQTT_TRANSPORT_SECURE,
 #endif /* CONFIG_MQTT_LIB_TLS */
 
 	/** Shall not be used as a transport type.
 	 *  Indicator of maximum transport types possible.
 	 */
-	MQTT_TRANSPORT_NUM        = 0x02
+	MQTT_TRANSPORT_NUM
 };
 
 /** @brief MQTT transport specific data. */
@@ -382,12 +384,19 @@ struct mqtt_transport {
 		} tls;
 #endif /* CONFIG_MQTT_LIB_TLS */
 	};
+
+#if defined(CONFIG_SOCKS)
+	struct {
+		struct sockaddr addr;
+		socklen_t addrlen;
+	} proxy;
+#endif
 };
 
 /** @brief MQTT internal state. */
 struct mqtt_internal {
 	/** Internal. Mutex to protect access to the client instance. */
-	struct k_mutex mutex;
+	struct sys_mutex mutex;
 
 	/** Internal. Wall clock value (in milliseconds) of the last activity
 	 *  that occurred. Needed for periodic PING.
@@ -458,6 +467,11 @@ struct mqtt_client {
 	/** Size of transmit buffer. */
 	u32_t tx_buf_size;
 
+	/** Keepalive interval for this client in seconds.
+	 *  Default is CONFIG_MQTT_KEEPALIVE.
+	 */
+	u16_t keepalive;
+
 	/** MQTT protocol version. */
 	u8_t protocol_version;
 
@@ -482,6 +496,24 @@ struct mqtt_client {
  */
 void mqtt_client_init(struct mqtt_client *client);
 
+#if defined(CONFIG_SOCKS)
+/*
+ * @brief Set proxy server details
+ *
+ * @param[in] client Client instance for which the procedure is requested,
+ *                   Shall not be NULL.
+ * @param[in] proxy_addr Proxy server address.
+ * @param[in] addrlen Proxy server address length.
+ *
+ * @return 0 or a negative error code (errno.h) indicating reason of failure.
+ *
+ * @note Must be called before calling mqtt_connect().
+ */
+int mqtt_client_set_proxy(struct mqtt_client *client,
+			  struct sockaddr *proxy_addr,
+			  socklen_t addrlen);
+#endif
+
 /**
  * @brief API to request new MQTT client connection.
  *
@@ -496,8 +528,11 @@ void mqtt_client_init(struct mqtt_client *client);
  *
  * @note Default protocol revision used for connection request is 3.1.1. Please
  *       set client.protocol_version = MQTT_VERSION_3_1_0 to use protocol 3.1.0.
- * @note Please modify :option:`CONFIG_MQTT_KEEPALIVE` time to override default
- *       of 1 minute.
+ * @note
+ *       @rst
+ *          Please modify :option:`CONFIG_MQTT_KEEPALIVE` time to override
+ *          default of 1 minute.
+ *       @endrst
  */
 int mqtt_connect(struct mqtt_client *client);
 
@@ -679,6 +714,35 @@ int mqtt_input(struct mqtt_client *client);
  */
 int mqtt_read_publish_payload(struct mqtt_client *client, void *buffer,
 			      size_t length);
+
+/**
+ * @brief Blocking version of @ref mqtt_read_publish_payload function.
+ *
+ * @param[in] client Client instance for which the procedure is requested.
+ *                   Shall not be NULL.
+ * @param[out] buffer Buffer where payload should be stored.
+ * @param[in] length Length of the buffer, in bytes.
+ *
+ * @return Number of bytes read or a negative error code (errno.h) indicating
+ *         reason of failure.
+ */
+int mqtt_read_publish_payload_blocking(struct mqtt_client *client, void *buffer,
+				       size_t length);
+
+/**
+ * @brief Blocking version of @ref mqtt_read_publish_payload function which
+ *        runs until the required number of bytes are read.
+ *
+ * @param[in] client Client instance for which the procedure is requested.
+ *                   Shall not be NULL.
+ * @param[out] buffer Buffer where payload should be stored.
+ * @param[in] length Number of bytes to read.
+ *
+ * @return 0 if success, otherwise a negative error code (errno.h) indicating
+ *         reason of failure.
+ */
+int mqtt_readall_publish_payload(struct mqtt_client *client, u8_t *buffer,
+				 size_t length);
 
 #ifdef __cplusplus
 }

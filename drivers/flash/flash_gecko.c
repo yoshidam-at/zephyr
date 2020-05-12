@@ -10,7 +10,7 @@
 #include <kernel.h>
 #include <device.h>
 #include <em_msc.h>
-#include <flash.h>
+#include <drivers/flash.h>
 #include <soc.h>
 
 #define LOG_LEVEL CONFIG_FLASH_LOG_LEVEL
@@ -84,12 +84,12 @@ static int flash_gecko_erase(struct device *dev, off_t offset, size_t size)
 	}
 
 	if ((offset % FLASH_PAGE_SIZE) != 0) {
-		LOG_ERR("offset %x: not on a page boundary", offset);
+		LOG_ERR("offset 0x%lx: not on a page boundary", (long)offset);
 		return -EINVAL;
 	}
 
 	if ((size % FLASH_PAGE_SIZE) != 0) {
-		LOG_ERR("size %x: not multiple of a page size", size);
+		LOG_ERR("size %zu: not multiple of a page size", size);
 		return -EINVAL;
 	}
 
@@ -133,7 +133,7 @@ static bool write_range_is_valid(off_t offset, u32_t size)
 {
 	return read_range_is_valid(offset, size)
 		&& (offset % sizeof(u32_t) == 0)
-		&& (size % 4 == 0);
+		&& (size % 4 == 0U);
 }
 
 static bool read_range_is_valid(off_t offset, u32_t size)
@@ -159,6 +159,22 @@ static int erase_flash_block(off_t offset, size_t size)
 	return ret;
 }
 
+#if CONFIG_FLASH_PAGE_LAYOUT
+static const struct flash_pages_layout flash_gecko_0_pages_layout = {
+	.pages_count = (CONFIG_FLASH_SIZE * 1024) /
+			DT_INST_0_SOC_NV_FLASH_ERASE_BLOCK_SIZE,
+	.pages_size = DT_INST_0_SOC_NV_FLASH_ERASE_BLOCK_SIZE,
+};
+
+void flash_gecko_page_layout(struct device *dev,
+			     const struct flash_pages_layout **layout,
+			     size_t *layout_size)
+{
+	*layout = &flash_gecko_0_pages_layout;
+	*layout_size = 1;
+}
+#endif /* CONFIG_FLASH_PAGE_LAYOUT */
+
 static int flash_gecko_init(struct device *dev)
 {
 	struct flash_gecko_data *const dev_data = DEV_DATA(dev);
@@ -180,10 +196,10 @@ static const struct flash_driver_api flash_gecko_driver_api = {
 	.write = flash_gecko_write,
 	.erase = flash_gecko_erase,
 	.write_protection = flash_gecko_write_protection,
-	/* FLASH_WRITE_BLOCK_SIZE is extracted from device tree as flash node
-	 * property 'write-block-size'.
-	 */
-	.write_block_size = FLASH_WRITE_BLOCK_SIZE,
+#ifdef CONFIG_FLASH_PAGE_LAYOUT
+	.page_layout = flash_gecko_page_layout,
+#endif
+	.write_block_size = DT_INST_0_SOC_NV_FLASH_WRITE_BLOCK_SIZE,
 };
 
 static struct flash_gecko_data flash_gecko_0_data;

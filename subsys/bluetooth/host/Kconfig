@@ -26,6 +26,7 @@ config BT_HCI_CMD_COUNT
 config BT_RX_BUF_COUNT
 	int "Number of HCI RX buffers"
 	default 3 if BT_RECV_IS_RX_THREAD
+	default 20 if (BT_MESH && !(BT_DISCARDABLE_BUF_COUNT > 0))
 	default 10
 	range 2 255
 	help
@@ -47,16 +48,36 @@ config BT_RX_BUF_LEN
 	  an L2CAP MTU of 65 bytes. On top of this there's the L2CAP header
 	  (4 bytes) and the ACL header (also 4 bytes) which yields 73 bytes.
 
+config BT_DISCARDABLE_BUF_COUNT
+	int "Number of discardable event buffers"
+	range 1 255
+	default 20 if BT_MESH
+	default 3
+	depends on BT_H4 || BT_CTLR
+	help
+	  Number of buffers in a separate buffer pool for events which
+	  the HCI driver considers discardable. Examples of such events
+	  could be e.g. Advertising Reports. The benefit of having such
+	  a pool means that the if there is a heavy inflow of such events
+	  it will not cause the allocation for other critical events to
+	  block and may even eliminate deadlocks in some cases.
+
 config BT_HCI_TX_STACK_SIZE
+	# NOTE: This value is derived from other symbols and should not be
+	# user-configurable. Do not give it a prompt.
 	int
 	default 512 if BT_H4
 	default 512 if BT_H5
 	default 416 if BT_SPI
-	default 640 if BT_CTLR
+	default 940 if BT_CTLR && (BT_LL_SW_LEGACY || BT_LL_SW_SPLIT) && NO_OPTIMIZATIONS
+	default 1024 if BT_CTLR && (BT_LL_SW_LEGACY || BT_LL_SW_SPLIT) && BT_CENTRAL
+	default 640 if BT_CTLR && (BT_LL_SW_LEGACY || BT_LL_SW_SPLIT)
 	default 512 if BT_USERCHAN
+	default 640 if BT_STM32_IPM
 	# Even if no driver is selected the following default is still
-	# needed e.g. for unit tests.
-	default 512
+	# needed e.g. for unit tests. This default will also server as
+	# the worst-case stack size if an out-of-tree controller is used.
+	default 1024
 	help
 	  Stack size needed for executing bt_send with specified driver
 
@@ -65,20 +86,12 @@ config BT_HCI_TX_PRIO
 	int
 	default 7
 
-config BT_WAIT_NOP
-	bool "Wait for \"NOP\" Command Complete event during init"
-	depends on BT_HCI
-	help
-	  Some controllers emit a Command Complete event for the NOP
-	  opcode to indicate that they're ready to receive commands.
-	  This option should be selected if the controller used
-	  exhibits such behavior.
-
 config BT_HCI_RESERVE
 	int
 	default 0 if BT_H4
 	default 1 if BT_H5
 	default 1 if BT_SPI
+	default 1 if BT_STM32_IPM
 	default 1 if BT_USERCHAN
 	# Even if no driver is selected the following default is still
 	# needed e.g. for unit tests.
@@ -122,8 +135,6 @@ config BT_RX_PRIO
 
 if BT_HCI_HOST
 
-source "subsys/bluetooth/host/mesh/Kconfig"
-
 config BT_HOST_CRYPTO
 	# Hidden option that compiles in random number generation and AES
 	# encryption support using TinyCrypt library if this is not provided
@@ -156,7 +167,6 @@ config BT_SETTINGS
 if BT_SETTINGS
 config BT_SETTINGS_CCC_STORE_ON_WRITE
 	bool "Store CCC value immediately after it has been written"
-	default n
 	help
 	  Store Client Configuration Characteristic value right after it has
 	  been updated.
@@ -166,6 +176,24 @@ config BT_SETTINGS_CCC_STORE_ON_WRITE
 	  that expect to be reset suddenly. However, it requires additional
 	  workqueue stack space.
 endif # BT_SETTINGS
+
+config BT_WHITELIST
+	bool "Enable whitelist support"
+	help
+	  This option enables the whitelist API. This takes advantage of the
+	  whitelisting feature of a BLE controller.
+	  The whitelist is a global list and the same whitelist is used
+	  by both scanner and advertiser. The whitelist cannot be modified while
+	  it is in use.
+
+	  An Advertiser can whitelist which peers can connect or request scan
+	  response data.
+	  A scanner can whitelist advertiser for which it will generate
+	  advertising reports.
+	  Connections can be established automatically for whitelisted peers.
+
+	  This options deprecates the bt_le_set_auto_conn API in favor of the
+	  bt_conn_create_aute_le API.
 
 if BT_CONN
 
@@ -177,46 +205,7 @@ config BT_ACL_RX_COUNT
 	range 1 64
 	help
 	  Number of buffers available for incoming ACL data.
-
-config BT_L2CAP_RX_MTU
-	int "Maximum supported L2CAP MTU for incoming data"
-	default 200 if BT_BREDR
-	default 65 if BT_SMP
-	default 23
-	range 65 1300 if BT_SMP
-	range 23 1300
-	help
-	  Maximum size of each incoming L2CAP PDU.
 endif # BT_HCI_ACL_FLOW_CONTROL
-
-config BT_L2CAP_TX_BUF_COUNT
-	int "Number of L2CAP TX buffers"
-	default 3
-	range 2 255
-	help
-	  Number of buffers available for outgoing L2CAP packets.
-
-config BT_L2CAP_TX_FRAG_COUNT
-	int "Number of L2CAP TX fragment buffers"
-	default 2
-	range 0 255
-	help
-	  Number of buffers available for fragments of TX buffers. Warning:
-	  setting this to 0 means that the application must ensure that
-	  queued TX buffers never need to be fragmented, i.e. that the
-	  controller's buffer size is large enough. If this is not ensured,
-	  and there are no dedicated fragment buffers, a deadlock may occur.
-	  In most cases the default value of 2 is a safe bet.
-
-config BT_L2CAP_TX_MTU
-	int "Maximum supported L2CAP MTU for L2CAP TX buffers"
-	default 253 if BT_BREDR
-	default 65 if BT_SMP
-	default 23
-	range 65 2000 if BT_SMP
-	range 23 2000
-	help
-	  Maximum L2CAP MTU for L2CAP TX buffers.
 
 config BT_CONN_TX_MAX
 	int "Maximum number of pending TX buffers"
@@ -226,35 +215,6 @@ config BT_CONN_TX_MAX
 	help
 	  Maximum number of pending TX buffers that have not yet
 	  been acknowledged by the controller.
-
-config BT_ATT_ENFORCE_FLOW
-	bool "Enforce strict flow control semantics for incoming PDUs"
-	default y if !(BOARD_QEMU_CORTEX_M3 || BOARD_QEMU_X86 || BOARD_NATIVE_POSIX)
-	help
-	  Enforce flow control rules on incoming PDUs, preventing a peer
-	  from sending new requests until a previous one has been responded
-	  or sending a new indication until a previous one has been
-	  confirmed. This may need to be disabled to avoid potential race
-	  conditions arising from a USB based HCI transport that splits
-	  HCI events and ACL data to separate endpoints.
-
-config BT_ATT_PREPARE_COUNT
-	int "Number of ATT prepare write buffers"
-	default 0
-	range 0 64
-	help
-	  Number of buffers available for ATT prepare write, setting
-	  this to 0 disables GATT long/reliable writes.
-
-config BT_ATT_TX_MAX
-	int "Maximum number of queued outgoing ATT PDUs"
-	default 2
-	range 1 BT_L2CAP_TX_BUF_COUNT
-	help
-	  Number of ATT PDUs that can be at a single moment queued for
-	  transmission. If the application tries to send more than this
-	  amount the calls will block until an existing queued PDU gets
-	  sent.
 
 config BT_AUTO_PHY_UPDATE
 	bool "Auto-initiate PHY Update Procedure"
@@ -345,26 +305,34 @@ config BT_BONDABLE
 	  Bonding flag in AuthReq of SMP Pairing Request/Response will be set
 	  indicating the support for this mode.
 
-endif # BT_SMP
-
-config BT_L2CAP_DYNAMIC_CHANNEL
-	bool "L2CAP Dynamic Channel support"
-	depends on BT_SMP
+config BT_STORE_DEBUG_KEYS
+	bool "Store Debug Mode bonds"
 	help
-	  This option enables support for LE Connection oriented Channels,
-	  allowing the creation of dynamic L2CAP Channels.
+	  This option enables support for storing bonds where either of devices
+	  has the Security Manager in Debug mode. This option should
+	  only be enabled for debugging and should never be used in production.
 
-config BT_GATT_CLIENT
-	bool "GATT client support"
-	help
-	  This option enables support for the GATT Client role.
-
-config BT_GATT_READ_MULTIPLE
-	bool "GATT Read Multiple Characteristic Values support"
+config BT_SMP_ENFORCE_MITM
+	bool "Enforce MITM protection"
 	default y
 	help
-	  This option enables support for the GATT Read Multiple Characteristic
-	  Values procedure.
+	  With this option enabled, the Security Manager will set MITM option in
+	  the Authentication Requirements Flags whenever local IO Capabilities
+	  allow the generated key to be authenticated.
+
+config BT_OOB_DATA_FIXED
+	bool "Use a fixed random number for LESC OOB pairing"
+	depends on BT_TESTING
+	help
+	  With this option enabled, the application will be able to perform LESC
+	  pairing with OOB data that consists of fixed random number and confirm
+	  value. This option should only be enabled for debugging and should
+	  never be used in production.
+
+endif # BT_SMP
+
+source "subsys/bluetooth/host/Kconfig.l2cap"
+source "subsys/bluetooth/host/Kconfig.gatt"
 
 config BT_MAX_PAIRED
 	int "Maximum number of paired devices"
@@ -375,48 +343,11 @@ config BT_MAX_PAIRED
 	  Maximum number of paired Bluetooth devices. The minimum (and
 	  default) number is 1.
 
-config BT_GAP_PERIPHERAL_PREF_PARAMS
-	bool "Configure peripheral preferred connection parameters"
-	default y
-	depends on BT_PERIPHERAL
-	help
-	  This allows to configure peripheral preferred connection parameters.
-	  Enabling this option results in adding PPCP characteristic in GAP
-	  and sending request for connection parameters update after GAP
-	  recommended 5 seconds of connection as peripheral. If disabled it is
-	  up to application to set expected connection parameters.
-
-if BT_GAP_PERIPHERAL_PREF_PARAMS
-config BT_PERIPHERAL_PREF_MIN_INT
-	int "Peripheral preferred minimum connection interval in 1.25ms units"
-	default 24
-	range 6 3200
-
-config BT_PERIPHERAL_PREF_MAX_INT
-	int "Peripheral preferred maximum connection interval in 1.25ms units"
-	default 40
-	range 6 3200
-
-config BT_PERIPHERAL_PREF_SLAVE_LATENCY
-	int "Peripheral preferred slave latency in Connection Intervals"
-	default 0
-	range 0 499
-
-config BT_PERIPHERAL_PREF_TIMEOUT
-	int "Peripheral preferred supervision timeout in 10ms units"
-	default 42
-	range 10 3200
-	help
-	  It is up to user to provide valid timeout which pass required minimum
-	  value: in milliseconds it shall be larger than
-	  "(1+ Conn_Latency) * Conn_Interval_Max * 2"
-	  where Conn_Interval_Max is given in milliseconds.
-endif # BT_GAP_PERIPHERAL_PREF_PARAMS
-
 config BT_CREATE_CONN_TIMEOUT
         int "Timeout for pending LE Create Connection command in seconds"
         default 3
         range 1 65535
+
 endif # BT_CONN
 
 if BT_OBSERVER
@@ -454,14 +385,6 @@ config BT_DEVICE_NAME_MAX
 	help
 	  Bluetooth device name storage size. Storage can be up to 248 bytes
 	  long (excluding NULL termination).
-
-config BT_DEVICE_NAME_GATT_WRITABLE
-	bool "Allow to write name by remote GATT clients"
-	depends on BT_CONN && BT_DEVICE_NAME_DYNAMIC
-	default y
-	help
-	  Enabling this option allows remote GATT clients to write to device
-	  name GAP characteristic.
 
 config BT_DEVICE_NAME
 	string "Bluetooth device name"
@@ -540,13 +463,6 @@ config BT_DEBUG_KEYS
 	  This option enables debug support for the handling of
 	  Bluetooth security keys.
 
-config BT_DEBUG_L2CAP
-	bool "Bluetooth L2CAP debug"
-	depends on BT_CONN
-	help
-	  This option enables debug support for the Bluetooth
-	  L2ACP layer.
-
 config BT_DEBUG_SMP
 	bool "Bluetooth Security Manager Protocol (SMP) debug"
 	depends on BT_HCI_HOST
@@ -569,20 +485,6 @@ config BT_SMP_FORCE_BREDR
 	  This option enables SMP over BR/EDR even if controller is not
 	  supporting BR/EDR Secure Connections. This option is solely for
 	  testing and should never be enabled on production devices.
-
-config BT_DEBUG_ATT
-	bool "Bluetooth Attribute Protocol (ATT) debug"
-	depends on BT_CONN
-	help
-	  This option enables debug support for the Bluetooth
-	  Attribute Protocol (ATT).
-
-config BT_DEBUG_GATT
-	bool "Bluetooth Generic Attribute Profile (GATT) debug"
-	depends on BT_CONN
-	help
-	  This option enables debug support for the Bluetooth
-	  Generic Attribute Profile (GATT).
 
 config BT_DEBUG_RFCOMM
 	bool "Bluetooth RFCOMM debug"
@@ -615,8 +517,15 @@ config BT_DEBUG_SDP
 	bool "Bluetooth Service Discovery Protocol (SDP) debug"
 	depends on BT_BREDR
 	help
-		This option enables debug support for the Bluetooth
-		Service Discovery Protocol (SDP).
+	  This option enables debug support for the Bluetooth
+	  Service Discovery Protocol (SDP).
+
+config BT_DEBUG_SERVICE
+	bool "Bluetooth Services debug"
+	depends on BT_CONN
+	help
+	  This option enables debug support for the Bluetooth
+	  Services.
 
 endif # BT_DEBUG
 
@@ -687,3 +596,9 @@ config BT_PAGE_TIMEOUT
 	  (N * 0.625) ms.
 
 endif # BT_BREDR
+
+config BT_HCI_VS_EVT_USER
+	bool "User Vendor-Specific event handling"
+	help
+	  Enable registering a callback for delegating to the user the handling of
+	  VS events that are not known to the stack

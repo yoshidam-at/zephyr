@@ -5,11 +5,11 @@
  */
 
 #include <clock_control/stm32_clock_control.h>
-#include <clock_control.h>
-#include <misc/util.h>
+#include <drivers/clock_control.h>
+#include <sys/util.h>
 #include <kernel.h>
 #include <errno.h>
-#include <i2c.h>
+#include <drivers/i2c.h>
 
 #define LOG_LEVEL CONFIG_I2C_LOG_LEVEL
 #include <logging/log.h>
@@ -180,7 +180,7 @@ static int i2c_virtual_transfer(struct device *dev, struct i2c_msg *msg,
 		}
 
 		/* Stop condition is required for the last message */
-		if ((num_msgs == 1) && !(current->flags & I2C_MSG_STOP)) {
+		if ((num_msgs == 1U) && !(current->flags & I2C_MSG_STOP)) {
 			ret = -EINVAL;
 			break;
 		}

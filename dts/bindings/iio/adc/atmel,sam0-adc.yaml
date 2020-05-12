@@ -1,0 +1,33 @@
+#
+# Copyright (c) 2019 Derek Hageman <hageman@inthat.cloud>
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+title: Atmel SAM0 Family ADC
+
+description: >
+    This binding gives a base representation of the Atmel SAM0 ADC
+
+inherits:
+    !include adc.yaml
+
+properties:
+    compatible:
+      constraint: "atmel,sam0-adc"
+
+    reg:
+      category: required
+
+    interrupts:
+      category: required
+
+    gclk:
+      type: int
+      category: required
+      description: generic clock generator source
+
+    prescaler:
+      type: int
+      category: required
+      description: clock prescaler divisor applied to the generic clock

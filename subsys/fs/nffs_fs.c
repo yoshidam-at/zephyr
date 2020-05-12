@@ -9,13 +9,15 @@
 #include <zephyr/types.h>
 #include <errno.h>
 #include <init.h>
-#include <flash.h>
-#include <fs.h>
-#include <crc.h>
-#include <misc/__assert.h>
-#include <misc/printk.h>
+#include <drivers/flash.h>
+#include <fs/fs.h>
+#include <sys/crc.h>
+#include <sys/__assert.h>
+#include <sys/printk.h>
 #include <nffs/os.h>
 #include <nffs/nffs.h>
+
+#include "fs_impl.h"
 
 #define NFFS_MAX_FILE_NAME 256
 
@@ -219,7 +221,10 @@ static int inode_to_dirent(struct nffs_inode_entry *inode,
 		entry->size = 0;
 	} else {
 		entry->type = FS_DIR_ENTRY_FILE;
-		nffs_inode_data_len(inode, &size);
+		rc = nffs_inode_data_len(inode, &size);
+		if (rc) {
+			return rc;
+		}
 		entry->size = size;
 	}
 
@@ -228,7 +233,9 @@ static int inode_to_dirent(struct nffs_inode_entry *inode,
 
 static int nffs_open(struct fs_file_t *zfp, const char *file_name)
 {
-	int rc, match_len;
+	int rc;
+
+	file_name = fs_impl_strip_prefix(file_name, zfp->mp);
 
 	k_mutex_lock(&nffs_lock, K_FOREVER);
 
@@ -239,8 +246,7 @@ static int nffs_open(struct fs_file_t *zfp, const char *file_name)
 		return -ENODEV;
 	}
 
-	match_len = strlen(zfp->mp->mnt_point);
-	rc = nffs_file_open((struct nffs_file **)&zfp->filep, &file_name[match_len],
+	rc = nffs_file_open((struct nffs_file **)&zfp->filep, file_name,
 			    FS_ACCESS_READ | FS_ACCESS_WRITE);
 
 	k_mutex_unlock(&nffs_lock);
@@ -266,12 +272,13 @@ static int nffs_close(struct fs_file_t *zfp)
 
 static int nffs_unlink(struct fs_mount_t *mountp, const char *path)
 {
-	int rc, match_len;
+	int rc;
+
+	path = fs_impl_strip_prefix(path, mountp);
 
 	k_mutex_lock(&nffs_lock, K_FOREVER);
 
-	match_len = strlen(mountp->mnt_point);
-	rc = nffs_path_unlink(&path[match_len]);
+	rc = nffs_path_unlink(path);
 
 	k_mutex_unlock(&nffs_lock);
 
@@ -391,7 +398,9 @@ static int nffs_sync(struct fs_file_t *zfp)
 
 static int nffs_mkdir(struct fs_mount_t *mountp, const char *path)
 {
-	int rc, match_len;
+	int rc;
+
+	path = fs_impl_strip_prefix(path, mountp);
 
 	k_mutex_lock(&nffs_lock, K_FOREVER);
 
@@ -400,8 +409,7 @@ static int nffs_mkdir(struct fs_mount_t *mountp, const char *path)
 		return -ENODEV;
 	}
 
-	match_len = strlen(mountp->mnt_point);
-	rc = nffs_path_new_dir(&path[match_len], NULL);
+	rc = nffs_path_new_dir(path, NULL);
 
 	k_mutex_unlock(&nffs_lock);
 
@@ -410,7 +418,9 @@ static int nffs_mkdir(struct fs_mount_t *mountp, const char *path)
 
 static int nffs_opendir(struct fs_dir_t *zdp, const char *path)
 {
-	int rc, match_len;
+	int rc;
+
+	path = fs_impl_strip_prefix(path, zdp->mp);
 
 	k_mutex_lock(&nffs_lock, K_FOREVER);
 
@@ -421,8 +431,7 @@ static int nffs_opendir(struct fs_dir_t *zdp, const char *path)
 		return -ENODEV;
 	}
 
-	match_len = strlen(zdp->mp->mnt_point);
-	rc = nffs_dir_open(&path[match_len], (struct nffs_dir **)&zdp->dirp);
+	rc = nffs_dir_open(path, (struct nffs_dir **)&zdp->dirp);
 
 	k_mutex_unlock(&nffs_lock);
 
@@ -476,12 +485,13 @@ static int nffs_stat(struct fs_mount_t *mountp,
 	struct nffs_path_parser parser;
 	struct nffs_inode_entry *parent;
 	struct nffs_inode_entry *inode;
-	int rc, match_len;
+	int rc;
+
+	path = fs_impl_strip_prefix(path, mountp);
 
 	k_mutex_lock(&nffs_lock, K_FOREVER);
 
-	match_len = strlen(mountp->mnt_point);
-	nffs_path_parser_new(&parser, &path[match_len]);
+	nffs_path_parser_new(&parser, path);
 
 	rc = nffs_path_find(&parser, &inode, &parent);
 	if (rc == 0) {
@@ -507,7 +517,10 @@ static int nffs_statvfs(struct fs_mount_t *mountp,
 static int nffs_rename(struct fs_mount_t *mountp, const char *from,
 		       const char *to)
 {
-	int rc, match_len;
+	int rc;
+
+	from = fs_impl_strip_prefix(from, mountp);
+	to = fs_impl_strip_prefix(to, mountp);
 
 	k_mutex_lock(&nffs_lock, K_FOREVER);
 
@@ -516,8 +529,7 @@ static int nffs_rename(struct fs_mount_t *mountp, const char *from,
 		return -ENODEV;
 	}
 
-	match_len = strlen(mountp->mnt_point);
-	rc = nffs_path_rename(&from[match_len], &to[match_len]);
+	rc = nffs_path_rename(from, to);
 
 	k_mutex_unlock(&nffs_lock);
 
@@ -537,8 +549,8 @@ static int nffs_mount(struct fs_mount_t *mountp)
 	/* Set flash descriptor fields */
 	flash_desc->id = 0;
 	flash_desc->sector_count = flash_get_page_count(flash_dev);
-	flash_desc->area_offset = FLASH_AREA_STORAGE_OFFSET;
-	flash_desc->area_size = FLASH_AREA_STORAGE_SIZE;
+	flash_desc->area_offset = DT_FLASH_AREA_STORAGE_OFFSET;
+	flash_desc->area_size = DT_FLASH_AREA_STORAGE_SIZE;
 
 	rc = nffs_misc_reset();
 	if (rc) {

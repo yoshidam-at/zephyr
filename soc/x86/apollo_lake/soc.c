@@ -15,7 +15,7 @@
 
 #include <kernel.h>
 #include "soc.h"
-#include <uart.h>
+#include <drivers/uart.h>
 #include <device.h>
 #include <init.h>
 
@@ -49,7 +49,7 @@ MMU_BOOT_REGION(DT_UART_NS16550_PORT_2_BASE_ADDR, 0x1000,
 #endif
 
 #ifdef CONFIG_UART_NS16550_PORT_3
-MMU_BOOT_REGION(CONFIG_UART_NS16550_PORT_3_BASE_ADDR, 0x1000,
+MMU_BOOT_REGION(DT_UART_NS16550_PORT_3_BASE_ADDR, 0x1000,
 		(MMU_ENTRY_READ | MMU_ENTRY_WRITE));
 #endif
 

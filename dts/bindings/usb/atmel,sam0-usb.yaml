@@ -1,6 +1,4 @@
----
 title: Atmel SAM0 USB device
-version: 0.1
 
 description: >
     Atmel SAM0 USB in device mode
@@ -13,14 +11,7 @@ properties:
       constraint: "atmel,sam0-usb"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
-...

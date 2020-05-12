@@ -9,8 +9,8 @@
 #ifndef ZEPHYR_INCLUDE_ARCH_CPU_H_
 #define ZEPHYR_INCLUDE_ARCH_CPU_H_
 
-#if defined(CONFIG_X86)
-#include <arch/x86/arch.h>
+#if defined(CONFIG_X86) && !defined(CONFIG_X86_LONGMODE)
+#include <arch/x86/ia32/arch.h>
 #elif defined(CONFIG_X86_64)
 #include <arch/x86_64/arch.h>
 #elif defined(CONFIG_ARM)
@@ -19,8 +19,8 @@
 #include <arch/arc/arch.h>
 #elif defined(CONFIG_NIOS2)
 #include <arch/nios2/arch.h>
-#elif defined(CONFIG_RISCV32)
-#include <arch/riscv32/arch.h>
+#elif defined(CONFIG_RISCV)
+#include <arch/riscv/arch.h>
 #elif defined(CONFIG_XTENSA)
 #include <arch/xtensa/arch.h>
 #elif defined(CONFIG_ARCH_POSIX)

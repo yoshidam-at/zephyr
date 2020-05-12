@@ -11,7 +11,7 @@ LOG_MODULE_REGISTER(net_mqtt_publisher_sample, LOG_LEVEL_DBG);
 #include <net/socket.h>
 #include <net/mqtt.h>
 
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <string.h>
 #include <errno.h>
 
@@ -26,6 +26,10 @@ static struct mqtt_client client_ctx;
 
 /* MQTT Broker details. */
 static struct sockaddr_storage broker;
+
+#if defined(CONFIG_SOCKS)
+static struct sockaddr socks5_proxy;
+#endif
 
 static struct pollfd fds[1];
 static int nfds;
@@ -222,8 +226,8 @@ static int publish(struct mqtt_client *client, enum mqtt_qos qos)
 	param.message.payload.len =
 			strlen(param.message.payload.data);
 	param.message_id = sys_rand32_get();
-	param.dup_flag = 0;
-	param.retain_flag = 0;
+	param.dup_flag = 0U;
+	param.retain_flag = 0U;
 
 	return mqtt_publish(client, &param);
 }
@@ -242,12 +246,27 @@ static void broker_init(void)
 	broker6->sin6_family = AF_INET6;
 	broker6->sin6_port = htons(SERVER_PORT);
 	inet_pton(AF_INET6, SERVER_ADDR, &broker6->sin6_addr);
+
+#if defined(CONFIG_SOCKS)
+	struct sockaddr_in6 *proxy6 = (struct sockaddr_in6 *)&socks5_proxy;
+
+	proxy6->sin6_family = AF_INET6;
+	proxy6->sin6_port = htons(SOCKS5_PROXY_PORT);
+	inet_pton(AF_INET6, SOCKS5_PROXY_ADDR, &proxy6->sin6_addr);
+#endif
 #else
 	struct sockaddr_in *broker4 = (struct sockaddr_in *)&broker;
 
 	broker4->sin_family = AF_INET;
 	broker4->sin_port = htons(SERVER_PORT);
 	inet_pton(AF_INET, SERVER_ADDR, &broker4->sin_addr);
+#if defined(CONFIG_SOCKS)
+	struct sockaddr_in *proxy4 = (struct sockaddr_in *)&socks5_proxy;
+
+	proxy4->sin_family = AF_INET;
+	proxy4->sin_port = htons(SOCKS5_PROXY_PORT);
+	inet_pton(AF_INET, SOCKS5_PROXY_ADDR, &proxy4->sin_addr);
+#endif
 #endif
 }
 
@@ -290,6 +309,13 @@ static void client_init(struct mqtt_client *client)
 
 #else
 	client->transport.type = MQTT_TRANSPORT_NON_SECURE;
+#endif
+
+#if defined(CONFIG_SOCKS)
+	mqtt_client_set_proxy(client, &socks5_proxy,
+			      socks5_proxy.sa_family == AF_INET ?
+			      sizeof(struct sockaddr_in) :
+			      sizeof(struct sockaddr_in6));
 #endif
 }
 

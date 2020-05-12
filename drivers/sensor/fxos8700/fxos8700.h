@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sensor.h>
-#include <i2c.h>
-#include <gpio.h>
+#include <drivers/sensor.h>
+#include <drivers/i2c.h>
+#include <drivers/gpio.h>
 
 #define FXOS8700_REG_STATUS			0x00
 #define FXOS8700_REG_OUTXMSB			0x01
@@ -126,6 +126,8 @@ struct fxos8700_config {
 	u8_t gpio_pin;
 #endif
 	u8_t i2c_address;
+	char *reset_name;
+	u8_t reset_pin;
 	enum fxos8700_mode mode;
 	enum fxos8700_power_mode power_mode;
 	enum fxos8700_range range;

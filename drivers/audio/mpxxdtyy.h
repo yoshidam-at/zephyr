@@ -7,14 +7,14 @@
 #ifndef MPXXDTYY_H
 #define MPXXDTYY_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <audio/dmic.h>
 #include <zephyr.h>
 #include <device.h>
 #include "OpenPDMFilter.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define MPXXDTYY_MIN_PDM_FREQ		1200000 /* 1.2MHz */
 #define MPXXDTYY_MAX_PDM_FREQ		3250000 /* 3.25MHz */
@@ -27,7 +27,7 @@ extern "C" {
 struct mpxxdtyy_data {
 	struct device		*comm_master;
 	enum dmic_state		state;
-	TPDMFilter_InitStruct	pdm_filter;
+	TPDMFilter_InitStruct	pdm_filter[2];
 	size_t			pcm_mem_size;
 	struct k_mem_slab	*pcm_mem_slab;
 };

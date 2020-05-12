@@ -63,12 +63,14 @@ TEST_DEF_PARAMS = ['--target', TEST_TARGET]
 
 FLASH_ALL_EXPECTED_CALL = ([TEST_PYOCD,
                             'flash',
+                            '-e', 'sector',
                             '-a', hex(TEST_ADDR), '-da', TEST_DAPARG,
-                            '-t', TEST_TARGET, '-b', TEST_BOARD_ID,
+                            '-t', TEST_TARGET, '-u', TEST_BOARD_ID,
                             '-f', TEST_FREQUENCY] +
                            TEST_FLASH_OPTS +
                            [RC_KERNEL_HEX])
-FLASH_DEF_EXPECTED_CALL = ['pyocd', 'flash', '-t', TEST_TARGET, RC_KERNEL_HEX]
+FLASH_DEF_EXPECTED_CALL = ['pyocd', 'flash', '-e', 'sector',
+                           '-t', TEST_TARGET, RC_KERNEL_HEX]
 
 
 DEBUG_ALL_EXPECTED_SERVER = [TEST_PYOCD,
@@ -76,7 +78,7 @@ DEBUG_ALL_EXPECTED_SERVER = [TEST_PYOCD,
                              '-da', TEST_DAPARG,
                              '-p', str(TEST_PORT),
                              '-t', TEST_TARGET,
-                             '-b', TEST_BOARD_ID,
+                             '-u', TEST_BOARD_ID,
                              '-f', TEST_FREQUENCY]
 DEBUG_ALL_EXPECTED_CLIENT = [RC_GDB, RC_KERNEL_ELF,
                              '-ex', 'target remote :{}'.format(TEST_PORT),
@@ -99,7 +101,7 @@ DEBUGSERVER_ALL_EXPECTED_CALL = [TEST_PYOCD,
                                  '-da', TEST_DAPARG,
                                  '-p', str(TEST_PORT),
                                  '-t', TEST_TARGET,
-                                 '-b', TEST_BOARD_ID,
+                                 '-u', TEST_BOARD_ID,
                                  '-f', TEST_FREQUENCY]
 DEBUGSERVER_DEF_EXPECTED_CALL = ['pyocd',
                                  'gdbserver',
@@ -135,6 +137,14 @@ def pyocd(runner_config, tmpdir):
 
 
 #
+# Helpers
+#
+
+def require_patch(program):
+    assert program in ['pyocd', TEST_PYOCD, RC_GDB]
+
+
+#
 # Test cases for runners created by constructor.
 #
 
@@ -143,8 +153,10 @@ def pyocd(runner_config, tmpdir):
     (TEST_DEF_KWARGS, FLASH_DEF_EXPECTED_CALL)
 ])
 @patch('runners.pyocd.PyOcdBinaryRunner.check_call')
-def test_flash(cc, pyocd_args, expected, pyocd):
+@patch('runners.core.ZephyrBinaryRunner.require', side_effect=require_patch)
+def test_flash(require, cc, pyocd_args, expected, pyocd):
     pyocd(pyocd_args).run('flash')
+    assert require.called
     cc.assert_called_once_with(expected)
 
 
@@ -153,8 +165,10 @@ def test_flash(cc, pyocd_args, expected, pyocd):
     (TEST_DEF_KWARGS, (DEBUG_DEF_EXPECTED_SERVER, DEBUG_DEF_EXPECTED_CLIENT))
 ])
 @patch('runners.pyocd.PyOcdBinaryRunner.run_server_and_client')
-def test_debug(rsc, pyocd_args, expectedv, pyocd):
+@patch('runners.core.ZephyrBinaryRunner.require', side_effect=require_patch)
+def test_debug(require, rsc, pyocd_args, expectedv, pyocd):
     pyocd(pyocd_args).run('debug')
+    assert require.called
     rsc.assert_called_once_with(*expectedv)
 
 
@@ -163,8 +177,10 @@ def test_debug(rsc, pyocd_args, expectedv, pyocd):
     (TEST_DEF_KWARGS, DEBUGSERVER_DEF_EXPECTED_CALL)
 ])
 @patch('runners.pyocd.PyOcdBinaryRunner.check_call')
-def test_debugserver(cc, pyocd_args, expected, pyocd):
+@patch('runners.core.ZephyrBinaryRunner.require', side_effect=require_patch)
+def test_debugserver(require, cc, pyocd_args, expected, pyocd):
     pyocd(pyocd_args).run('debugserver')
+    assert require.called
     cc.assert_called_once_with(expected)
 
 
@@ -181,10 +197,12 @@ def test_debugserver(cc, pyocd_args, expected, pyocd):
 ])
 @patch('runners.pyocd.BuildConfiguration')
 @patch('runners.pyocd.PyOcdBinaryRunner.check_call')
-def test_flash_args(cc, bc, pyocd_args, flash_addr, expected, pyocd):
+@patch('runners.core.ZephyrBinaryRunner.require', side_effect=require_patch)
+def test_flash_args(require, cc, bc, pyocd_args, flash_addr, expected, pyocd):
     with patch.object(PyOcdBinaryRunner, 'get_flash_address',
                       return_value=flash_addr):
         pyocd(pyocd_args).run('flash')
+        assert require.called
         bc.assert_called_once_with(RC_BUILD_DIR)
         cc.assert_called_once_with(expected)
 
@@ -195,8 +213,10 @@ def test_flash_args(cc, bc, pyocd_args, flash_addr, expected, pyocd):
 ])
 @patch('runners.pyocd.BuildConfiguration')
 @patch('runners.pyocd.PyOcdBinaryRunner.run_server_and_client')
-def test_debug_args(rsc, bc, pyocd_args, expectedv, pyocd):
+@patch('runners.core.ZephyrBinaryRunner.require', side_effect=require_patch)
+def test_debug_args(require, rsc, bc, pyocd_args, expectedv, pyocd):
     pyocd(pyocd_args).run('debug')
+    assert require.called
     bc.assert_called_once_with(RC_BUILD_DIR)
     rsc.assert_called_once_with(*expectedv)
 
@@ -207,7 +227,9 @@ def test_debug_args(rsc, bc, pyocd_args, expectedv, pyocd):
 ])
 @patch('runners.pyocd.BuildConfiguration')
 @patch('runners.pyocd.PyOcdBinaryRunner.check_call')
-def test_debugserver_args(cc, bc, pyocd_args, expected, pyocd):
+@patch('runners.core.ZephyrBinaryRunner.require', side_effect=require_patch)
+def test_debugserver_args(require, cc, bc, pyocd_args, expected, pyocd):
     pyocd(pyocd_args).run('debugserver')
+    assert require.called
     bc.assert_called_once_with(RC_BUILD_DIR)
     cc.assert_called_once_with(expected)

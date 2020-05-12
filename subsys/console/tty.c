@@ -5,11 +5,9 @@
  */
 
 #include <zephyr.h>
-#include <uart.h>
-#include <misc/printk.h>
-#include <tty.h>
-#include <drivers/console/console.h>
-#include <drivers/console/uart_console.h>
+#include <drivers/uart.h>
+#include <sys/printk.h>
+#include <console/tty.h>
 
 static int tty_irq_input_hook(struct tty_serial *tty, u8_t c);
 static int tty_putchar(struct tty_serial *tty, u8_t c);
@@ -41,7 +39,7 @@ static void tty_uart_isr(void *user_data)
 		} else {
 			uart_fifo_fill(dev, &tty->tx_ringbuf[tty->tx_get++], 1);
 			if (tty->tx_get >= tty->tx_ringbuf_sz) {
-				tty->tx_get = 0;
+				tty->tx_get = 0U;
 			}
 			k_sem_give(&tty->tx_sem);
 		}
@@ -103,7 +101,7 @@ ssize_t tty_write(struct tty_serial *tty, const void *buf, size_t size)
 	size_t out_size = 0;
 	int res = 0;
 
-	if (tty->tx_ringbuf_sz == 0) {
+	if (tty->tx_ringbuf_sz == 0U) {
 		/* Unbuffered operation, implicitly blocking. */
 		out_size = size;
 
@@ -152,7 +150,7 @@ static int tty_getchar(struct tty_serial *tty)
 	key = irq_lock();
 	c = tty->rx_ringbuf[tty->rx_get++];
 	if (tty->rx_get >= tty->rx_ringbuf_sz) {
-		tty->rx_get = 0;
+		tty->rx_get = 0U;
 	}
 	irq_unlock(key);
 
@@ -170,7 +168,7 @@ static ssize_t tty_read_unbuf(struct tty_serial *tty, void *buf, size_t size)
 		u8_t c;
 		res = uart_poll_in(tty->uart_dev, &c);
 		if (res <= -2) {
-			/* Error occured, best we can do is to return
+			/* Error occurred, best we can do is to return
 			 * accumulated data w/o error, or return error
 			 * directly if none.
 			 */
@@ -187,7 +185,7 @@ static ssize_t tty_read_unbuf(struct tty_serial *tty, void *buf, size_t size)
 			size--;
 		}
 
-		if (size == 0 || (timeout != K_FOREVER && timeout-- == 0)) {
+		if (size == 0 || (timeout != K_FOREVER && timeout-- == 0U)) {
 			break;
 		}
 
@@ -208,7 +206,7 @@ ssize_t tty_read(struct tty_serial *tty, void *buf, size_t size)
 	size_t out_size = 0;
 	int res = 0;
 
-	if (tty->rx_ringbuf_sz == 0) {
+	if (tty->rx_ringbuf_sz == 0U) {
 		return tty_read_unbuf(tty, buf, size);
 	}
 
@@ -243,11 +241,11 @@ int tty_init(struct tty_serial *tty, struct device *uart_dev)
 
 	/* We start in unbuffer mode. */
 	tty->rx_ringbuf = NULL;
-	tty->rx_ringbuf_sz = 0;
+	tty->rx_ringbuf_sz = 0U;
 	tty->tx_ringbuf = NULL;
-	tty->tx_ringbuf_sz = 0;
+	tty->tx_ringbuf_sz = 0U;
 
-	tty->rx_get = tty->rx_put = tty->tx_get = tty->tx_put = 0;
+	tty->rx_get = tty->rx_put = tty->tx_get = tty->tx_put = 0U;
 
 	tty->rx_timeout = K_FOREVER;
 	tty->tx_timeout = K_FOREVER;

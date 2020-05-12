@@ -17,14 +17,14 @@
  * @{
  */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdbool.h>
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/hci.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /** Opaque type representing a connection to a remote device */
 struct bt_conn;
@@ -124,8 +124,16 @@ enum {
 
 /** LE Connection Info Structure */
 struct bt_conn_le_info {
-	const bt_addr_le_t *src; /** Source (Local) Address */
-	const bt_addr_le_t *dst; /** Destination (Remote) Address */
+	/** Source (Local) Identity Address */
+	const bt_addr_le_t *src;
+	/** Destination (Remote) Identity Address or remote Resolvable Private
+	 *  Address (RPA) before identity has been resolved.
+	 */
+	const bt_addr_le_t *dst;
+	/** Local device address used during connection setup. */
+	const bt_addr_le_t *local;
+	/** Remote device address used during connection setup. */
+	const bt_addr_le_t *remote;
 	u16_t interval; /** Connection interval */
 	u16_t latency; /** Connection slave latency */
 	u16_t timeout; /** Connection supervision timeout */
@@ -201,6 +209,8 @@ int bt_conn_disconnect(struct bt_conn *conn, u8_t reason);
  *  Allows initiate new LE link to remote peer using its address.
  *  Returns a new reference that the the caller is responsible for managing.
  *
+ *  This uses the General Connection Establishment procedure.
+ *
  *  @param peer  Remote address.
  *  @param param Initial connection parameters.
  *
@@ -208,6 +218,22 @@ int bt_conn_disconnect(struct bt_conn *conn, u8_t reason);
  */
 struct bt_conn *bt_conn_create_le(const bt_addr_le_t *peer,
 				  const struct bt_le_conn_param *param);
+
+/** @brief Automatically connect to remote devices in whitelist.
+ *
+ *  This uses the Auto Connection Establishment procedure.
+ *
+ *  @param param Initial connection parameters.
+ *
+ *  @return Zero on success or (negative) error code on failure.
+ */
+int bt_conn_create_auto_le(const struct bt_le_conn_param *param);
+
+/** @brief Stop automatic connect creation.
+ *
+ *  @return Zero on success or (negative) error code on failure.
+ */
+int bt_conn_create_auto_stop(void);
 
 /** @brief Automatically connect to remote device if it's in range.
  *
@@ -231,8 +257,9 @@ int bt_le_set_auto_conn(const bt_addr_le_t *addr,
  *  Allows initiating a new LE connection to remote peer with the remote
  *  acting in central role and the local device in peripheral role.
  *
- *  The advertising type must be either BT_LE_ADV_DIRECT_IND or
- *  BT_LE_ADV_DIRECT_IND_LOW_DUTY.
+ *  The advertising type will either be BT_LE_ADV_DIRECT_IND, or
+ *  BT_LE_ADV_DIRECT_IND_LOW_DUTY if the BT_LE_ADV_OPT_DIR_MODE_LOW_DUTY
+ *  option was used as part of the advertising parameters.
  *
  *  In case of high duty cycle this will result in a callback with
  *  connected() with a new connection or with an error.
@@ -251,16 +278,27 @@ struct bt_conn *bt_conn_create_slave_le(const bt_addr_le_t *peer,
 
 /** Security level. */
 typedef enum __packed {
-	/** Only for BR/EDR special cases, like SDP */
-	BT_SECURITY_NONE,
-	/** No encryption and no authentication. */
-	BT_SECURITY_LOW,
-	/** Encryption and no authentication (no MITM). */
-	BT_SECURITY_MEDIUM,
-	/** Encryption and authentication (MITM). */
-	BT_SECURITY_HIGH,
-	/** Authenticated Secure Connections */
-	BT_SECURITY_FIPS,
+	/** Level 0: Only for BR/EDR special cases, like SDP */
+	BT_SECURITY_L0,
+	/** Level 1: No encryption and no authentication. */
+	BT_SECURITY_L1,
+	/** Level 2: Encryption and no authentication (no MITM). */
+	BT_SECURITY_L2,
+	/** Level 3: Encryption and authentication (MITM). */
+	BT_SECURITY_L3,
+	/** Level 4: Authenticated Secure Connections and 128-bit key. */
+	BT_SECURITY_L4,
+
+	BT_SECURITY_NONE   __deprecated = BT_SECURITY_L0,
+	BT_SECURITY_LOW    __deprecated = BT_SECURITY_L1,
+	BT_SECURITY_MEDIUM __deprecated = BT_SECURITY_L2,
+	BT_SECURITY_HIGH   __deprecated = BT_SECURITY_L3,
+	BT_SECURITY_FIPS   __deprecated = BT_SECURITY_L4,
+
+	/** Bit to force new pairing procedure, bit-wise OR with requested
+	 *  security level.
+	 */
+	BT_SECURITY_FORCE_PAIR = BIT(7),
 } bt_security_t;
 
 /** @brief Set security level for a connection.
@@ -276,14 +314,20 @@ typedef enum __packed {
  *
  *  This function may return error if required level of security is not possible
  *  to achieve due to local or remote device limitation (e.g., input output
- *  capabilities).
+ *  capabilities), or if the maximum number of paired devices has been reached.
  *
  *  @param conn Connection object.
  *  @param sec Requested security level.
  *
  *  @return 0 on success or negative error
  */
-int bt_conn_security(struct bt_conn *conn, bt_security_t sec);
+int bt_conn_set_security(struct bt_conn *conn, bt_security_t sec);
+
+static inline int __deprecated bt_conn_security(struct bt_conn *conn,
+						bt_security_t sec)
+{
+	return bt_conn_set_security(conn, sec);
+}
 
 /** @brief Get encryption key size.
  *
@@ -295,6 +339,35 @@ int bt_conn_security(struct bt_conn *conn, bt_security_t sec);
  *  @return Encryption key size.
  */
 u8_t bt_conn_enc_key_size(struct bt_conn *conn);
+
+enum bt_security_err {
+	/** Security procedure successful. */
+	BT_SECURITY_ERR_SUCCESS,
+
+	/** Authentication failed. */
+	BT_SECURITY_ERR_AUTH_FAIL,
+
+	/** PIN or encryption key is missing. */
+	BT_SECURITY_ERR_PIN_OR_KEY_MISSING,
+
+	/** OOB data is not available.  */
+	BT_SECURITY_ERR_OOB_NOT_AVAILABLE,
+
+	/** The requested security level could not be reached. */
+	BT_SECURITY_ERR_AUTH_REQUIREMENT,
+
+	/** Pairing is not supported */
+	BT_SECURITY_ERR_PAIR_NOT_SUPPORTED,
+
+	/** Pairing is not allowed. */
+	BT_SECURITY_ERR_PAIR_NOT_ALLOWED,
+
+	/** Invalid parameters. */
+	BT_SECURITY_ERR_INVALID_PARAM,
+
+	/** Pairing failed but the exact reason could not be specified. */
+	BT_SECURITY_ERR_UNSPECIFIED,
+};
 
 /** @brief Connection callback structure.
  *
@@ -386,8 +459,10 @@ struct bt_conn_cb {
 	 *
 	 *  @param conn Connection object.
 	 *  @param level New security level of the connection.
+	 *  @param err Security error. Zero for success, non-zero otherwise.
 	 */
-	void (*security_changed)(struct bt_conn *conn, bt_security_t level);
+	void (*security_changed)(struct bt_conn *conn, bt_security_t level,
+				 enum bt_security_err err);
 #endif /* defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR) */
 	struct bt_conn_cb *_next;
 };
@@ -412,6 +487,59 @@ void bt_conn_cb_register(struct bt_conn_cb *cb);
  */
 void bt_set_bondable(bool enable);
 
+/** Allow/disallow remote OOB data to be used for pairing.
+ *
+ *  Set/clear the OOB data flag for SMP Pairing Request/Response data.
+ *  The initial value of this flag depends on BT_OOB_DATA_PRESENT Kconfig
+ *  setting.
+ *
+ *  @param enable Value allowing/disallowing remote OOB data.
+ */
+void bt_set_oob_data_flag(bool enable);
+
+/**
+ * @brief Set OOB data during LE SC pairing procedure
+ *
+ * This function allows to set OOB data during the LE SC pairing procedure. The
+ * function should only be called in response to the oob_data_request() callback
+ * provided that LE SC method is used for pairing.
+ *
+ * The user should submit OOB data according to the information received in the
+ * callback. This may yield three different configurations: with only local OOB
+ * data present, with only remote OOB data present or with both local and
+ * remote OOB data present.
+ *
+ * @param conn Connection object
+ * @param oobd_local Local OOB data or NULL if not present
+ * @param oobd_remote Remote OOB data or NULL if not present
+ *
+ *  @return Zero on success or error code otherwise, positive in case
+ *  of protocol error or negative (POSIX) in case of stack internal error
+ */
+int bt_le_oob_set_sc_data(struct bt_conn *conn,
+			  const struct bt_le_oob_sc_data *oobd_local,
+			  const struct bt_le_oob_sc_data *oobd_remote);
+
+/**
+ * @brief Get OOB data used for LE SC pairing procedure
+ *
+ * This function allows to get OOB data during the LE SC pairing procedure that
+ * were set by the bt_le_oob_set_sc_data() API.
+ *
+ *  Note: The OOB data will only be available as long as the connection object
+ *  associated with it is valid.
+ *
+ * @param conn Connection object
+ * @param oobd_local Local OOB data or NULL if not set
+ * @param oobd_remote Remote OOB data or NULL if not set
+ *
+ *  @return Zero on success or error code otherwise, positive in case
+ *  of protocol error or negative (POSIX) in case of stack internal error
+ */
+int bt_le_oob_get_sc_data(struct bt_conn *conn,
+			  const struct bt_le_oob_sc_data **oobd_local,
+			  const struct bt_le_oob_sc_data **oobd_remote);
+
 /** @def BT_PASSKEY_INVALID
  *
  *  Special passkey value that can be used to disable a previously
@@ -433,6 +561,38 @@ void bt_set_bondable(bool enable);
  *  @return 0 on success or a negative error code on failure.
  */
 int bt_passkey_set(unsigned int passkey);
+
+/** Info Structure for OOB pairing */
+struct bt_conn_oob_info {
+	/** Type of OOB pairing method */
+	enum {
+		/** LE legacy pairing */
+		BT_CONN_OOB_LE_LEGACY,
+
+		/** LE SC pairing */
+		BT_CONN_OOB_LE_SC,
+	} type;
+
+	union {
+		/** LESC OOB pairing parameters */
+		struct {
+			/** OOB data configuration */
+			enum {
+				/** Local OOB data requested */
+				BT_CONN_OOB_LOCAL_ONLY,
+
+				/** Remote OOB data requested */
+				BT_CONN_OOB_REMOTE_ONLY,
+
+				/** Both local and remote OOB data requested */
+				BT_CONN_OOB_BOTH_PEERS,
+
+				/** No OOB data requested */
+				BT_CONN_OOB_NO_DATA,
+			} oob_config;
+		} lesc;
+	};
+};
 
 /** Authenticated pairing callback structure */
 struct bt_conn_auth_cb {
@@ -499,6 +659,24 @@ struct bt_conn_auth_cb {
 	 */
 	void (*passkey_confirm)(struct bt_conn *conn, unsigned int passkey);
 
+	/** @brief Request the user to provide OOB data.
+	 *
+	 *  When called the user is expected to provide OOB data. The required
+	 *  data are indicated by the information structure.
+	 *
+	 *  For LESC OOB pairing method, the user should provide local OOB data,
+	 *  remote OOB data or both depending on their availability. Their value
+	 *  should be given to the stack using the bt_le_oob_set_sc_data() API.
+	 *
+	 *  This callback must be set to non-NULL in order to support OOB
+	 *  pairing.
+	 *
+	 *  @param conn Connection where pairing is currently active.
+	 *  @param info OOB pairing information.
+	 */
+	void (*oob_data_request)(struct bt_conn *conn,
+				 struct bt_conn_oob_info *info);
+
 	/** @brief Cancel the ongoing user request.
 	 *
 	 *  This callback will be called to notify the application that it
@@ -557,7 +735,7 @@ struct bt_conn_auth_cb {
 
 	/** @brief notify that pairing process was complete.
 	 *
-	 * This callback notifies the applicaiton that the pairing process
+	 * This callback notifies the application that the pairing process
 	 * has been completed.
 	 *
 	 * @param conn Connection object.
@@ -568,8 +746,10 @@ struct bt_conn_auth_cb {
 	/** @brief notify that pairing process has failed.
 	 *
 	 * @param conn Connection object.
+	 * @param reason Pairing failed reason
 	 */
-	void (*pairing_failed)(struct bt_conn *conn);
+	void (*pairing_failed)(struct bt_conn *conn,
+			       enum bt_security_err reason);
 };
 
 /** @brief Register authentication callbacks.

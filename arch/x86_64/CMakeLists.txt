@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 set(X86_64_BASE_CFLAGS
     -ffreestanding
     -fno-pic
@@ -9,4 +11,7 @@ add_subdirectory(core)
 
 zephyr_compile_options(${X86_64_BASE_CFLAGS} -mx32)
 
-zephyr_link_libraries(-mx32)
+zephyr_link_libraries(
+    -mx32
+    ${LINKERFLAGPREFIX},-melf32_x86_64
+)

@@ -14,13 +14,11 @@
 #ifndef __GPTP_MI_H
 #define __GPTP_MI_H
 
+#include "gptp_md.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#if defined(CONFIG_NET_GPTP)
-
-#include "gptp_md.h"
 
 /**
  * @brief Media Independent Sync Information.
@@ -70,8 +68,6 @@ void gptp_mi_state_machines(void);
  * @return Current time in nanoseconds.
  */
 u64_t gptp_get_current_time_nanosecond(int port);
-
-#endif /* CONFIG_NET_GPTP */
 
 #ifdef __cplusplus
 }

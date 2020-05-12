@@ -14,13 +14,13 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <errno.h>
 #include <init.h>
 #include <kernel.h>
-#include <misc/__assert.h>
+#include <sys/__assert.h>
 #include <net/net_core.h>
 #include <net/net_pkt.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys_io.h>
+#include <sys/sys_io.h>
 #include <net/ethernet.h>
 #include <ethernet/eth_stats.h>
 
@@ -93,7 +93,7 @@ static void eth_rx(struct device *dev)
 		goto error;
 	}
 
-	if (net_pkt_write_new(pkt, (void *)context->rx_buf, frm_len)) {
+	if (net_pkt_write(pkt, (void *)context->rx_buf, frm_len)) {
 		LOG_ERR("Failed to append RX buffer to context buffer");
 		net_pkt_unref(pkt);
 		goto error;
@@ -136,7 +136,7 @@ static void eth_tx_spin_wait(struct eth_runtime *context)
 
 static void eth_tx_data(struct eth_runtime *context, u8_t *data, u16_t len)
 {
-#ifdef CONFIG_NET_DEBUG_L2_ETHERNET
+#if CONFIG_ETHERNET_LOG_LEVEL >= LOG_LEVEL_DBG
 	/* Check whether an error occurred transmitting the previous frame. */
 	if (context->tx_desc.err_summary) {
 		LOG_ERR("Error transmitting frame: TDES0 = %08x,"
@@ -196,7 +196,7 @@ static void eth_dw_isr(struct device *dev)
 	 * by the shared IRQ driver. So check here if the interrupt
 	 * is coming from the GPIO controller (or somewhere else).
 	 */
-	if ((int_status & STATUS_RX_INT) == 0) {
+	if ((int_status & STATUS_RX_INT) == 0U) {
 		return;
 	}
 #endif
@@ -367,7 +367,7 @@ static const struct eth_config eth_config_0 = {
 	.config_func		= eth_config_0_irq,
 
 #ifdef CONFIG_ETH_DW_0_IRQ_SHARED
-	.shared_irq_dev_name	= CONFIG_ETH_DW_0_IRQ_SHARED_NAME,
+	.shared_irq_dev_name	= DT_ETH_DW_0_IRQ_SHARED_NAME,
 #endif
 };
 
@@ -388,5 +388,5 @@ NET_DEVICE_INIT(eth_dw_0, CONFIG_ETH_DW_0_NAME,
 		eth_setup, &eth_0_runtime,
 		&eth_config_0, CONFIG_ETH_INIT_PRIORITY, &api_funcs,
 		ETHERNET_L2, NET_L2_GET_CTX_TYPE(ETHERNET_L2),
-		ETH_DW_MTU);
+		NET_ETH_MTU);
 #endif  /* CONFIG_ETH_DW_0 */

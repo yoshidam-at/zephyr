@@ -14,7 +14,7 @@
 
 #include <device.h>
 #include <errno.h>
-#include <i2c.h>
+#include <drivers/i2c.h>
 #include "i2c_bitbang.h"
 
 /* SBCon hardware registers layout */
@@ -111,27 +111,27 @@ static int i2c_sbcon_init(struct device *dev)
 static struct i2c_sbcon_context i2c_sbcon_dev_data_##_num;		\
 									\
 static const struct i2c_sbcon_config i2c_sbcon_dev_cfg_##_num = {	\
-	.sbcon		= (void *)DT_ARM_VERSATILE_I2C_##_num##_BASE_ADDRESS, \
+	.sbcon		= (void *)DT_INST_##_num##_ARM_VERSATILE_I2C_BASE_ADDRESS, \
 };									\
 									\
-DEVICE_AND_API_INIT(i2c_sbcon_##_num, DT_ARM_VERSATILE_I2C_##_num##_LABEL, \
+DEVICE_AND_API_INIT(i2c_sbcon_##_num, DT_INST_##_num##_ARM_VERSATILE_I2C_LABEL, \
 	    i2c_sbcon_init,						\
 	    &i2c_sbcon_dev_data_##_num,					\
 	    &i2c_sbcon_dev_cfg_##_num,					\
 	    PRE_KERNEL_2, CONFIG_I2C_INIT_PRIORITY, &api)
 
-#ifdef DT_ARM_VERSATILE_I2C_0
+#ifdef DT_INST_0_ARM_VERSATILE_I2C
 DEFINE_I2C_SBCON(0);
 #endif
 
-#ifdef DT_ARM_VERSATILE_I2C_1
+#ifdef DT_INST_1_ARM_VERSATILE_I2C
 DEFINE_I2C_SBCON(1);
 #endif
 
-#ifdef DT_ARM_VERSATILE_I2C_2
+#ifdef DT_INST_2_ARM_VERSATILE_I2C
 DEFINE_I2C_SBCON(2);
 #endif
 
-#ifdef DT_ARM_VERSATILE_I2C_3
+#ifdef DT_INST_3_ARM_VERSATILE_I2C
 DEFINE_I2C_SBCON(3);
 #endif

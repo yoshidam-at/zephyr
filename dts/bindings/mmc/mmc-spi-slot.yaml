@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: MMC/SD/SDIO slot connected via SPI
-version: 0.1
 
 description: MMC/SD/SDIO slot connected via SPI
 
@@ -15,5 +14,3 @@ inherits:
 properties:
     compatible:
       constraint: "zephyr,mmc-spi-slot"
-
-...

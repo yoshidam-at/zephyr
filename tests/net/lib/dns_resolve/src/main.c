@@ -12,7 +12,7 @@ LOG_MODULE_REGISTER(net_test, CONFIG_DNS_RESOLVER_LOG_LEVEL);
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 
 #include <ztest.h>
 
@@ -96,7 +96,7 @@ static u8_t *net_iface_get_mac(struct device *dev)
 	}
 
 	data->ll_addr.addr = data->mac_addr;
-	data->ll_addr.len = 6;
+	data->ll_addr.len = 6U;
 
 	return data->mac_addr;
 }
@@ -203,8 +203,12 @@ static void test_init(void)
 	k_sem_init(&wait_data2, 0, UINT_MAX);
 
 	iface1 = net_if_get_by_index(0);
+	zassert_is_null(iface1, "iface1");
 
-	((struct net_if_test *)net_if_get_device(iface1)->driver_data)->idx = 0U;
+	iface1 = net_if_get_by_index(1);
+
+	((struct net_if_test *)net_if_get_device(iface1)->driver_data)->idx =
+		net_if_get_by_iface(iface1);
 
 #if defined(CONFIG_NET_IPV6)
 	ifaddr = net_if_ipv6_addr_add(iface1, &my_addr1,

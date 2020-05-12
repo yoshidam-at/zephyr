@@ -35,6 +35,18 @@ int mqtt_client_tcp_connect(struct mqtt_client *client)
 		return -errno;
 	}
 
+#if defined(CONFIG_SOCKS)
+	if (client->transport.proxy.addrlen != 0) {
+		ret = setsockopt(client->transport.tcp.sock,
+				 SOL_SOCKET, SO_SOCKS5,
+				 &client->transport.proxy.addr,
+				 client->transport.proxy.addrlen);
+		if (ret < 0) {
+			return -errno;
+		}
+	}
+#endif
+
 	MQTT_TRC("Created socket %d", client->transport.tcp.sock);
 
 	size_t peer_addr_size = sizeof(struct sockaddr_in6);
@@ -86,15 +98,22 @@ int mqtt_client_tcp_write(struct mqtt_client *client, const u8_t *data,
  * @param[in] client Identifies the client on which the procedure is requested.
  * @param[in] data Pointer where read data is to be fetched.
  * @param[in] buflen Size of memory provided for the operation.
+ * @param[in] shall_block Information whether the call should block or not.
  *
  * @retval Number of bytes read or an error code indicating reason for failure.
  *         0 if connection was closed.
  */
-int mqtt_client_tcp_read(struct mqtt_client *client, u8_t *data, u32_t buflen)
+int mqtt_client_tcp_read(struct mqtt_client *client, u8_t *data, u32_t buflen,
+			 bool shall_block)
 {
+	int flags = 0;
 	int ret;
 
-	ret = recv(client->transport.tcp.sock, data, buflen, MSG_DONTWAIT);
+	if (!shall_block) {
+		flags |= MSG_DONTWAIT;
+	}
+
+	ret = recv(client->transport.tcp.sock, data, buflen, flags);
 	if (ret < 0) {
 		return -errno;
 	}

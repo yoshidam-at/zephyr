@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: STMicroelectronics MEMS sensors HTS221
-version: 0.1
 
 description: >
     This binding gives a base representation of HTS221 humidity and temperature
@@ -22,6 +21,3 @@ properties:
       type: compound
       category: optional
       description: DRDY pin
-      generation: define, use-prop-name
-
-...

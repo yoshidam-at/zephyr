@@ -11,15 +11,11 @@
  */
 
 #include <zephyr.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <device.h>
-#include <pwm.h>
+#include <drivers/pwm.h>
 
-#if defined(CONFIG_SOC_QUARK_SE_C1000) || defined(CONFIG_SOC_QUARK_D2000)
-#define PWM_DEV CONFIG_PWM_QMSI_DEV_NAME
-#elif defined(CONFIG_PWM_NRF5_SW)
-#define PWM_DEV CONFIG_PWM_NRF5_SW_0_DEV_NAME
-#else
+#ifndef DT_ALIAS_PWM_0_LABEL
 #error "Choose supported board or add new board for the application"
 #endif
 
@@ -27,7 +23,7 @@
  * Unlike pulse width, period is not a critical parameter for
  * motor control. 20ms is commonly used.
  */
-#define PERIOD (USEC_PER_SEC / 50)
+#define PERIOD (USEC_PER_SEC / 50U)
 
 /* all in micro second */
 #define STEPSIZE 100
@@ -42,7 +38,7 @@ void main(void)
 
 	printk("PWM demo app-servo control\n");
 
-	pwm_dev = device_get_binding(PWM_DEV);
+	pwm_dev = device_get_binding(DT_ALIAS_PWM_0_LABEL);
 	if (!pwm_dev) {
 		printk("Cannot find PWM device!\n");
 		return;

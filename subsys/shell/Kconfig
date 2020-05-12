@@ -8,11 +8,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-menu "Shell Options"
-
 menuconfig SHELL
-	bool "Enable shell"
-	select LOG_RUNTIME_FILTERING
+	bool "Shell"
+	imply LOG_RUNTIME_FILTERING
 	select POLL
 
 if SHELL
@@ -36,12 +34,6 @@ config SHELL_BACKSPACE_MODE_DELETE
 	  Terminals have different escape code settings for backspace button.
 	  Some terminals send code: 0x08 (backspace) other 0x7F (delete). When
 	  this option is set shell will expect 0x7F for backspace key.
-
-config SHELL_PROMPT_LENGTH
-	int "Maximum prompt length"
-	default 16
-	help
-	  Maximum length of prompt name in bytes.
 
 config SHELL_CMD_BUFF_SIZE
 	int "Shell command buffer size"
@@ -107,6 +99,7 @@ config SHELL_HELP_ON_WRONG_ARGUMENT_COUNT
 config SHELL_HISTORY
 	bool "Enable history in shell"
 	default y
+	select RING_BUFFER
 	help
 	  Enable commands history. History can be accessed using up and down
 	  arrows.
@@ -115,7 +108,7 @@ if SHELL_HISTORY
 
 config SHELL_HISTORY_BUFFER
 	int "History buffer in bytes"
-	default 1024
+	default 512
 	help
 	  Number of bytes dedicated for storing executed commands.
 
@@ -148,6 +141,13 @@ config SHELL_CMDS_RESIZE
 	  must be called to ensure correct text display on the terminal screen.
 	  The resize command can be turned off to save code memory (~0,5k).
 
+config SHELL_CMDS_SELECT
+	bool "Enable select command"
+	depends on SHELL_CMDS
+	help
+	  This option enables select command. It can be used to set new root
+	  command. Exit to main command tree is with alt+r.
+
 config SHELL_LOG_BACKEND
 	bool
 	default y if LOG
@@ -155,5 +155,4 @@ config SHELL_LOG_BACKEND
 
 source "subsys/shell/modules/Kconfig"
 
-endif #SHELL
-endmenu
+endif # SHELL

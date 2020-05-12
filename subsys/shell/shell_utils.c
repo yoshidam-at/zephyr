@@ -3,8 +3,9 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include "shell_utils.h"
 #include <ctype.h>
+#include "shell_utils.h"
+#include "shell_wildcard.h"
 
 extern const struct shell_cmd_entry __shell_root_cmds_start[0];
 extern const struct shell_cmd_entry __shell_root_cmds_end[0];
@@ -225,7 +226,7 @@ static inline u32_t shell_root_cmd_count(void)
 }
 
 /* Function returning pointer to root command matching requested syntax. */
-const struct shell_cmd_entry *shell_root_cmd_find(const char *syntax)
+const struct shell_static_entry *shell_root_cmd_find(const char *syntax)
 {
 	const size_t cmd_count = shell_root_cmd_count();
 	const struct shell_cmd_entry *cmd;
@@ -233,44 +234,132 @@ const struct shell_cmd_entry *shell_root_cmd_find(const char *syntax)
 	for (size_t cmd_idx = 0; cmd_idx < cmd_count; ++cmd_idx) {
 		cmd = shell_root_cmd_get(cmd_idx);
 		if (strcmp(syntax, cmd->u.entry->syntax) == 0) {
-			return cmd;
+			return cmd->u.entry;
 		}
 	}
 
 	return NULL;
 }
 
-void shell_cmd_get(const struct shell_cmd_entry *command, size_t lvl,
+void shell_cmd_get(const struct shell *shell,
+		   const struct shell_cmd_entry *command, size_t lvl,
 		   size_t idx, const struct shell_static_entry **entry,
 		   struct shell_static_entry *d_entry)
 {
 	__ASSERT_NO_MSG(entry != NULL);
 	__ASSERT_NO_MSG(d_entry != NULL);
 
+	*entry = NULL;
+
 	if (lvl == SHELL_CMD_ROOT_LVL) {
-		if (idx < shell_root_cmd_count()) {
+		if (shell_in_select_mode(shell)	&&
+		    IS_ENABLED(CONFIG_SHELL_CMDS_SELECT)) {
+			const struct shell_static_entry *ptr =
+						       shell->ctx->selected_cmd;
+			if (ptr->subcmd->u.entry[idx].syntax != NULL) {
+				*entry = &ptr->subcmd->u.entry[idx];
+			}
+		} else if (idx < shell_root_cmd_count()) {
 			const struct shell_cmd_entry *cmd;
 
 			cmd = shell_root_cmd_get(idx);
 			*entry = cmd->u.entry;
-		} else {
-			*entry = NULL;
 		}
 		return;
 	}
 
 	if (command == NULL) {
-		*entry = NULL;
 		return;
 	}
 
 	if (command->is_dynamic) {
 		command->u.dynamic_get(idx, d_entry);
-		*entry = (d_entry->syntax != NULL) ? d_entry : NULL;
+		if (d_entry->syntax != NULL) {
+			*entry = d_entry;
+		}
 	} else {
-		*entry = (command->u.entry[idx].syntax != NULL) ?
-				&command->u.entry[idx] : NULL;
+		if (command->u.entry[idx].syntax != NULL) {
+			*entry = &command->u.entry[idx];
+		}
 	}
+}
+
+/* Function returns pointer to a command matching given pattern.
+ *
+ * @param shell		Shell instance.
+ * @param cmd		Pointer to commands array that will be searched.
+ * @param lvl		Root command indicator. If set to 0 shell will search
+ *			for pattern in root commands.
+ * @param cmd_str	Command pattern to be found.
+ * @param d_entry	Shell static command descriptor.
+ *
+ * @return		Pointer to found command.
+ */
+static const struct shell_static_entry *find_cmd(
+					     const struct shell *shell,
+					     const struct shell_cmd_entry *cmd,
+					     size_t lvl,
+					     char *cmd_str,
+					     struct shell_static_entry *d_entry)
+{
+	const struct shell_static_entry *entry = NULL;
+	size_t idx = 0;
+
+	do {
+		shell_cmd_get(shell, cmd, lvl, idx++, &entry, d_entry);
+		if (entry && (strcmp(cmd_str, entry->syntax) == 0)) {
+			return entry;
+		}
+	} while (entry);
+
+	return NULL;
+}
+
+const struct shell_static_entry *shell_get_last_command(
+					     const struct shell *shell,
+					     size_t argc,
+					     char *argv[],
+					     size_t *match_arg,
+					     struct shell_static_entry *d_entry,
+					     bool only_static)
+{
+	const struct shell_static_entry *prev_entry = NULL;
+	const struct shell_static_entry *entry = NULL;
+	const struct shell_cmd_entry *cmd = NULL;
+
+	*match_arg = SHELL_CMD_ROOT_LVL;
+
+	while (*match_arg < argc) {
+
+		if (IS_ENABLED(CONFIG_SHELL_WILDCARD)) {
+			/* ignore wildcard argument */
+			if (shell_wildcard_character_exist(argv[*match_arg])) {
+				(*match_arg)++;
+				continue;
+			}
+		}
+
+		entry = find_cmd(shell, cmd, *match_arg, argv[*match_arg],
+				 d_entry);
+		if (entry) {
+			cmd = entry->subcmd;
+			prev_entry = entry;
+			(*match_arg)++;
+		} else {
+			break;
+		}
+
+		if (cmd == NULL) {
+			return NULL;
+		}
+
+		if (only_static && cmd->is_dynamic) {
+			(*match_arg)--;
+			return NULL;
+		}
+	}
+
+	return entry;
 }
 
 int shell_command_add(char *buff, u16_t *buff_len,
@@ -347,9 +436,9 @@ static void buffer_trim(char *buff, u16_t *buff_len)
 		return;
 	}
 
-	while (isspace((int) buff[*buff_len - 1])) {
-		*buff_len -= 1;
-		if (*buff_len == 0) {
+	while (isspace((int) buff[*buff_len - 1U])) {
+		*buff_len -= 1U;
+		if (*buff_len == 0U) {
 			buff[0] = '\0';
 			return;
 		}
@@ -360,15 +449,12 @@ static void buffer_trim(char *buff, u16_t *buff_len)
 	 * command.
 	 */
 	while (isspace((int) buff[i++])) {
-		if (i == 0) {
-			buff[0] = '\0';
-			return;
-		}
 	}
+
 
 	/* Removing counted whitespace characters. */
 	if (--i > 0) {
-		memmove(buff, buff + i, (*buff_len + 1) - i); /* +1 for '\0' */
+		memmove(buff, buff + i, (*buff_len + 1U) - i); /* +1 for '\0' */
 		*buff_len = *buff_len - i;
 	}
 }
@@ -378,4 +464,3 @@ void shell_cmd_trim(const struct shell *shell)
 	buffer_trim(shell->ctx->cmd_buff, &shell->ctx->cmd_buff_len);
 	shell->ctx->cmd_buff_pos = shell->ctx->cmd_buff_len;
 }
-

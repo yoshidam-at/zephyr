@@ -72,6 +72,12 @@ static int start_udp_proto(struct data *data, struct sockaddr *bind_addr,
 	}
 #endif
 
+#if defined(CONFIG_NET_CONTEXT_TIMESTAMP)
+	bool val = 1;
+
+	setsockopt(data->udp.sock, SOL_SOCKET, SO_TIMESTAMPING, &val, sizeof(val));
+#endif
+
 	ret = bind(data->udp.sock, bind_addr, bind_addrlen);
 	if (ret < 0) {
 		NET_ERR("Failed to bind UDP socket (%s): %d", data->proto,
@@ -89,7 +95,8 @@ static int process_udp(struct data *data)
 	struct sockaddr client_addr;
 	socklen_t client_addr_len;
 
-	NET_INFO("Waiting for UDP packets (%s)...", data->proto);
+	NET_INFO("Waiting for UDP packets on port %d (%s)...",
+		 MY_PORT, data->proto);
 
 	do {
 		client_addr_len = sizeof(client_addr);
@@ -114,7 +121,7 @@ static int process_udp(struct data *data)
 			break;
 		}
 
-		if (++data->udp.counter % 1000 == 0) {
+		if (++data->udp.counter % 1000 == 0U) {
 			NET_INFO("%s UDP: Sent %u packets", data->proto,
 				 data->udp.counter);
 		}

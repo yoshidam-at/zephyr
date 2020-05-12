@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <zephyr/types.h>
-#include <stats.h>
+#include <stats/stats.h>
 
 #define STATS_GEN_NAME_MAX_LEN  (sizeof("s255"))
 
@@ -131,8 +131,8 @@ stats_walk(struct stats_hdr *hdr, stats_walk_fn *walk_func, void *arg)
  * @param map_cnt The number of items in the statistics map
  */
 void
-stats_init(struct stats_hdr *hdr, u8_t size, u8_t cnt,
-	   const struct stats_name_map *map, u8_t map_cnt)
+stats_init(struct stats_hdr *hdr, u8_t size, u16_t cnt,
+	   const struct stats_name_map *map, u16_t map_cnt)
 {
 	hdr->s_size = size;
 	hdr->s_cnt = cnt;
@@ -257,8 +257,8 @@ stats_register(const char *name, struct stats_hdr *hdr)
  * @return 0 on success, non-zero error code on failure.
  */
 int
-stats_init_and_reg(struct stats_hdr *shdr, u8_t size, u8_t cnt,
-		   const struct stats_name_map *map, u8_t map_cnt,
+stats_init_and_reg(struct stats_hdr *shdr, u8_t size, u16_t cnt,
+		   const struct stats_name_map *map, u16_t map_cnt,
 		   const char *name)
 {
 	int rc;
@@ -281,5 +281,5 @@ stats_init_and_reg(struct stats_hdr *shdr, u8_t size, u8_t cnt,
 void
 stats_reset(struct stats_hdr *hdr)
 {
-	(void)memset(hdr + 1, 0, hdr->s_size * hdr->s_cnt);
+	(void)memset((u8_t *)hdr + sizeof(*hdr), 0, hdr->s_size * hdr->s_cnt);
 }

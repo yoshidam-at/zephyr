@@ -9,12 +9,12 @@
 #
 
 # Include these first so that any properties (e.g. defaults) below can be
-# overriden (by defining symbols in multiple locations)
+# overridden (by defining symbols in multiple locations)
 
 # Note: $ARCH might be a glob pattern
-source "arch/$(ARCH)/Kconfig"
+source "$(ARCH_DIR)/$(ARCH)/Kconfig"
 
-choice
+choice ARCH_CHOICE
 	prompt "Architecture"
 	default X86
 
@@ -24,7 +24,6 @@ config ARC
 
 config ARM
 	bool "ARM architecture"
-	select ARCH_HAS_THREAD_ABORT
 	select HAS_DTS
 
 config X86
@@ -35,14 +34,15 @@ config X86
 config X86_64
 	bool "x86_64 architecture"
 	select ATOMIC_OPERATIONS_BUILTIN
+	select SCHED_IPI_SUPPORTED
 
 config NIOS2
 	bool "Nios II Gen 2 architecture"
 	select ATOMIC_OPERATIONS_C
 	select HAS_DTS
 
-config RISCV32
-	bool "RISCV32 architecture"
+config RISCV
+	bool "RISCV architecture"
 	select HAS_DTS
 
 config XTENSA
@@ -82,7 +82,16 @@ config BIG_ENDIAN
          is used to select linker script OUTPUT_FORMAT and command
          line option for gen_isr_tables.py.
 
-if ARC || ARM || NIOS2 || X86
+config 64BIT
+	bool
+	help
+	  This option tells the build system that the target system is
+	  using a 64-bit address space, meaning that pointer and long types
+	  are 64 bits wide. This option is selected by arch/$ARCH/Kconfig,
+	  soc/**/Kconfig, or boards/**/Kconfig and the user should generally
+	  avoid modifying it.
+
+if ARC || ARM || NIOS2 || X86 || X86_64
 
 config SRAM_SIZE
 	int "SRAM Size in kB"
@@ -112,11 +121,11 @@ config FLASH_BASE_ADDRESS
 	hex "Flash Base Address"
 	default $(dt_hex_val,DT_FLASH_BASE_ADDRESS) if (XIP && ARM) || !ARM
 	help
-	  This option specifies the base address of the flash on the board.  It is
+	  This option specifies the base address of the flash on the board. It is
 	  normally set by the board's defconfig file and the user should generally
 	  avoid modifying it via the menu configuration.
 
-endif # ARM || ARC || NIOS2 || X86
+endif # ARM || ARC || NIOS2 || X86 || X86_64
 
 if ARCH_HAS_TRUSTED_EXECUTION
 
@@ -177,10 +186,7 @@ config USERSPACE
 
 config PRIVILEGED_STACK_SIZE
 	int "Size of privileged stack"
-	default 512 if MPU_STACK_GUARD || BUILTIN_STACK_GUARD
-	default 512 if COVERAGE_GCOV
-	default 384 if ARC
-	default 256
+	default 1024
 	depends on ARCH_HAS_USERSPACE
 	help
 	  This option sets the privileged stack region size that will be used
@@ -190,9 +196,8 @@ config PRIVILEGED_STACK_SIZE
 
 config PRIVILEGED_STACK_TEXT_AREA
 	int "Privileged stacks text area"
-	default 256 if (DEBUG || STACK_CANARIES || CODE_DATA_RELOCATION)
 	default 512 if COVERAGE_GCOV
-	default 128
+	default 256
 	depends on ARCH_HAS_USERSPACE
 	help
 	  Stack text area size for privileged stacks.
@@ -200,9 +205,8 @@ config PRIVILEGED_STACK_TEXT_AREA
 config KOBJECT_TEXT_AREA
 	int "Size if kobject text area"
 	default 512 if COVERAGE_GCOV
-	default 256 if (!SIZE_OPTIMIZATIONS || STACK_CANARIES || ARC)
-	default 256 if CODE_DATA_RELOCATION
-	default 128
+	default 512 if NO_OPTIMIZATIONS
+	default 256
 	depends on ARCH_HAS_USERSPACE
 	help
 	  Size of kernel object text area. Used in linker script.
@@ -236,15 +240,6 @@ config DYNAMIC_OBJECTS
 	API call, or when the number of references to that object drops to
 	zero.
 
-config SIMPLE_FATAL_ERROR_HANDLER
-	bool "Simple system fatal error handler"
-	default y if !MULTITHREADING
-	help
-	  Provides an implementation of _SysFatalErrorHandler() that hard hangs
-	  instead of aborting the faulting thread, and does not print anything,
-	  for footprint-concerned systems. Only enable this option if you do not
-	  want debug capabilities in case of system fatal error.
-
 if ARCH_HAS_NOCACHE_MEMORY_SUPPORT
 
 config NOCACHE_MEMORY
@@ -263,7 +258,6 @@ menu "Interrupt Configuration"
 #
 config DYNAMIC_INTERRUPTS
 	bool "Enable installation of IRQs at runtime"
-	default n
 	help
 	  Enable installation of interrupts at runtime, which will move some
 	  interrupt-related data structures to RAM instead of ROM, and
@@ -297,6 +291,16 @@ config GEN_SW_ISR_TABLE
 	  needs a software ISR table table created. This is an array of struct
 	  _isr_table_entry containing the interrupt service routine and supplied
 	  parameter.
+
+config ARCH_SW_ISR_TABLE_ALIGN
+	int "Alignment size of a software ISR table"
+	default 0
+	depends on GEN_SW_ISR_TABLE
+	help
+	  This option controls alignment size of generated
+	  _sw_isr_table.  Some architecture needs a software ISR table
+	  to be aligned to architecture specific size.  The default
+	  size is 0 for no alignment.
 
 config GEN_IRQ_START_VECTOR
 	int
@@ -339,6 +343,9 @@ config ARCH_HAS_EXECUTABLE_PAGE_BIT
 config ARCH_HAS_NOCACHE_MEMORY_SUPPORT
 	bool
 
+config ARCH_HAS_RAMFUNC_SUPPORT
+	bool
+
 #
 # Other architecture related options
 #
@@ -350,60 +357,46 @@ config ARCH_HAS_THREAD_ABORT
 # Hidden PM feature configs which are to be selected by
 # individual SoC.
 #
-config SYS_POWER_LOW_POWER_STATE_SUPPORTED
+config HAS_SYS_POWER_STATE_SLEEP_1
 	# Hidden
 	bool
 	help
-	  This option signifies that the target supports the SYS_POWER_LOW_POWER_STATE
+	  This option signifies that the target supports the SYS_POWER_STATE_SLEEP_1
 	  configuration option.
 
-config SYS_POWER_STATE_CPU_LPS_SUPPORTED
+config HAS_SYS_POWER_STATE_SLEEP_2
 	# Hidden
 	bool
 	help
-	  This option signifies that the target supports the SYS_POWER_STATE_CPU_LPS
+	  This option signifies that the target supports the SYS_POWER_STATE_SLEEP_2
 	  configuration option.
 
-config SYS_POWER_STATE_CPU_LPS_1_SUPPORTED
+config HAS_SYS_POWER_STATE_SLEEP_3
 	# Hidden
 	bool
 	help
-	  This option signifies that the target supports the SYS_POWER_STATE_CPU_LPS_1
+	  This option signifies that the target supports the SYS_POWER_STATE_SLEEP_3
 	  configuration option.
 
-config SYS_POWER_STATE_CPU_LPS_2_SUPPORTED
-	# Hidden
-	bool
-	help
-	  This option signifies that the target supports the SYS_POWER_STATE_CPU_LPS_2
-	  configuration option.
-
-config SYS_POWER_DEEP_SLEEP_SUPPORTED
-	# Hidden
-	bool
-	help
-	  This option signifies that the target supports the SYS_POWER_DEEP_SLEEP
-	  configuration option.
-
-config SYS_POWER_STATE_DEEP_SLEEP_SUPPORTED
-	# Hidden
-	bool
-	help
-	  This option signifies that the target supports the SYS_POWER_STATE_DEEP_SLEEP
-	  configuration option.
-
-config SYS_POWER_STATE_DEEP_SLEEP_1_SUPPORTED
+config HAS_SYS_POWER_STATE_DEEP_SLEEP_1
 	# Hidden
 	bool
 	help
 	  This option signifies that the target supports the SYS_POWER_STATE_DEEP_SLEEP_1
 	  configuration option.
 
-config SYS_POWER_STATE_DEEP_SLEEP_2_SUPPORTED
+config HAS_SYS_POWER_STATE_DEEP_SLEEP_2
 	# Hidden
 	bool
 	help
 	  This option signifies that the target supports the SYS_POWER_STATE_DEEP_SLEEP_2
+	  configuration option.
+
+config HAS_SYS_POWER_STATE_DEEP_SLEEP_3
+	# Hidden
+	bool
+	help
+	  This option signifies that the target supports the SYS_POWER_STATE_DEEP_SLEEP_3
 	  configuration option.
 
 config BOOTLOADER_CONTEXT_RESTORE_SUPPORTED
@@ -461,6 +454,7 @@ config MPU_REQUIRES_NON_OVERLAPPING_REGIONS
 menuconfig FLOAT
 	bool "Floating point"
 	depends on CPU_HAS_FPU
+	depends on ARM || X86 || ARC
 	help
 	  This option allows threads to use the floating point registers.
 	  By default, only a single thread may use the registers.

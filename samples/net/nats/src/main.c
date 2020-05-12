@@ -7,7 +7,7 @@
 #include <logging/log.h>
 LOG_MODULE_REGISTER(net_nats_sample, LOG_LEVEL_DBG);
 
-#include <gpio.h>
+#include <drivers/gpio.h>
 #include <net/net_context.h>
 #include <net/net_core.h>
 #include <net/net_if.h>
@@ -16,17 +16,17 @@ LOG_MODULE_REGISTER(net_nats_sample, LOG_LEVEL_DBG);
 #include "nats.h"
 
 /* LED */
-#ifndef LED0_GPIO_CONTROLLER
+#ifndef DT_ALIAS_LED0_GPIOS_CONTROLLER
 #ifdef LED0_GPIO_PORT
-#define LED0_GPIO_CONTROLLER 	LED0_GPIO_PORT
+#define DT_ALIAS_LED0_GPIOS_CONTROLLER 	LED0_GPIO_PORT
 #else
-#define LED0_GPIO_CONTROLLER "(fail)"
-#define LED0_GPIO_PIN 0
+#define DT_ALIAS_LED0_GPIOS_CONTROLLER "(fail)"
+#define DT_ALIAS_LED0_GPIOS_PIN 0
 #endif
 #endif
 
-#define LED_GPIO_NAME LED0_GPIO_CONTROLLER
-#define LED_PIN LED0_GPIO_PIN
+#define LED_GPIO_NAME DT_ALIAS_LED0_GPIOS_CONTROLLER
+#define LED_PIN DT_ALIAS_LED0_GPIOS_PIN
 
 static struct device *led0;
 static bool fake_led;
@@ -132,9 +132,8 @@ static void initialize_network(void)
 		panic("No default network interface");
 	}
 
-#if defined(CONFIG_NET_IPV6) && defined(CONFIG_NET_DHCPV6)
 	/* TODO: IPV6 DHCP */
-#elif defined(CONFIG_NET_IPV4) && defined(CONFIG_NET_DHCPV4)
+#if defined(CONFIG_NET_IPV4) && defined(CONFIG_NET_DHCPV4)
 	net_dhcpv4_start(iface);
 
 	/* delay so DHCPv4 can assign IP */
@@ -171,7 +170,7 @@ static void initialize_network(void)
 			     &net_sin(&addr)->sin_addr,
 			     NET_ADDR_MANUAL, 0);
 #endif
-#endif /* CONFIG_NET_IPV6 && CONFIG_NET_DHCPV6 */
+#endif /* CONFIG_NET_IPV4 && CONFIG_NET_DHCPV4 */
 }
 
 static bool read_led(void)
@@ -266,9 +265,8 @@ static int connect(struct nats *nats, u16_t port)
 		return ret;
 	}
 
-#if defined(CONFIG_NET_IPV6) && defined(CONFIG_NET_DHCPV6)
 	/* TODO: IPV6 DHCP */
-#elif defined(CONFIG_NET_IPV4) && defined(CONFIG_NET_DHCPV4)
+#if defined(CONFIG_NET_IPV4) && defined(CONFIG_NET_DHCPV4)
 	iface = net_if_get_default();
 
 	net_ipaddr_copy(&net_sin(&src_addr)->sin_addr,

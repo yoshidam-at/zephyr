@@ -35,6 +35,9 @@
 #error Library does not support the specified device.
 #endif
 
+/* Add include for DTS generated information */
+#include <generated_dts_board.h>
+
 #define ID_UART0   ID_UART
 #define UART0      UART
 
@@ -46,7 +49,7 @@
 #endif /* _ASMLANGUAGE */
 
 /** Processor Clock (HCLK) Frequency */
-#define SOC_ATMEL_SAM_HCLK_FREQ_HZ CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC
+#define SOC_ATMEL_SAM_HCLK_FREQ_HZ DT_ARM_CORTEX_M4_0_CLOCK_FREQUENCY
 /** Master Clock (MCK) Frequency */
 #define SOC_ATMEL_SAM_MCK_FREQ_HZ SOC_ATMEL_SAM_HCLK_FREQ_HZ
 

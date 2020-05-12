@@ -4,12 +4,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-menu "Link Layer Discovery Protocol (LLDP) options"
-
-config NET_LLDP
-	bool "Enable LLDP"
-	default n
-	depends on NET_L2_ETHERNET
+menuconfig NET_LLDP
+	bool "Enable Link Layer Discovery Protocol (LLDP)"
 	select NET_MGMT
 	select NET_MGMT_EVENT
 	help
@@ -42,7 +38,7 @@ config NET_LLDP_TX_HOLD
 	range 1 100
 	help
 	  This value (msgTxHold) is used as a multiplier of
-	  CONFIG_NET_LLDP_MSG_TX_INTERVAL, to determine the value to be used
+	  CONFIG_NET_LLDP_TX_INTERVAL, to determine the value to be used
 	  as Time to Live in LLDP frames. For further information please
 	  refer to section 9.2.5.6 of the LLDP spec.
 
@@ -197,6 +193,4 @@ config NET_LLDP_PORT_ID
 	default "PORT_ID_PLACEHOLDER"
 endif
 
-endif
-
-endmenu
+endif # NET_LLDP

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 
 if BOARD_NATIVE_POSIX
 
@@ -11,6 +12,7 @@ config OUTPUT_PRINT_MEMORY_USAGE
 	default n
 
 config BOARD
+	default "native_posix_64" if BOARD_NATIVE_POSIX_64BIT
 	default "native_posix"
 
 if NETWORKING
@@ -86,11 +88,18 @@ config TRACING_CTF_BOTTOM_POSIX
 
 endif # TRACING_CTF
 
+if FLASH
+
+config FLASH_NATIVE_POSIX
+	default y
+
+endif # FLASH
+
 endif # BOARD_NATIVE_POSIX
 
 if USB
 
 config USB_NATIVE_POSIX
-	def_bool y
+	default y
 
 endif # USB

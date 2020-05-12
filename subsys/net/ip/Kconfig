@@ -22,6 +22,7 @@ if !NET_RAW_MODE
 
 choice
 	prompt "Qemu networking"
+	default NET_QEMU_PPP if NET_PPP
 	default NET_QEMU_SLIP
 	depends on QEMU_TARGET
 	help
@@ -33,6 +34,11 @@ config NET_QEMU_SLIP
 	bool "SLIP"
 	help
 	  Connect to host or to another Qemu via SLIP.
+
+config NET_QEMU_PPP
+	bool "PPP"
+	help
+	  Connect to host via PPP.
 
 config NET_QEMU_ETHERNET
 	bool "Ethernet"
@@ -304,6 +310,15 @@ config NET_UDP_CHECKSUM
 	  Enables UDP handler to check UDP checksum. If the checksum is invalid,
 	  then the packet is discarded.
 
+config NET_UDP_MISSING_CHECKSUM
+	bool "Accept missing checksum (IPv4 only)"
+	depends on NET_UDP && NET_IPV4
+	help
+	  RFC 768 states the possibility to have a missing checksum, for
+	  debugging purposes for instance. That feature is however valid only
+	  for IPv4 and on reception only, since Zephyr will always compute the
+	  UDP checksum in transmission path.
+
 if NET_UDP
 module = NET_UDP
 module-dep = NET_LOG
@@ -314,19 +329,12 @@ endif # NET_UDP
 
 config NET_MAX_CONN
 	int "How many network connections are supported"
-	depends on NET_UDP || NET_TCP
+	depends on NET_UDP || NET_TCP || NET_SOCKETS_PACKET || NET_SOCKETS_CAN
 	default 8 if NET_IPV6 && NET_IPV4
 	default 4
 	help
 	  The value depends on your network needs. The value
 	  should include both UDP and TCP connections.
-
-config NET_CONN_CACHE
-	bool "Cache network connections"
-	depends on NET_UDP || NET_TCP
-	help
-	  Caching takes slight more memory but will speedup connection
-	  handling of UDP and TCP connections.
 
 config NET_MAX_CONTEXTS
 	int "Number of network contexts to allocate"
@@ -366,6 +374,21 @@ config NET_CONTEXT_PRIORITY
 	help
 	  It is possible to prioritize network traffic. This requires
 	  also traffic class support to work as expected.
+
+config NET_CONTEXT_TIMESTAMP
+	bool "Add timestamp support to net_context"
+	select NET_PKT_TIMESTAMP
+	help
+	  It is possible to timestamp outgoing packets and get information
+	  about these timestamps.
+
+config NET_CONTEXT_TXTIME
+	bool "Add TXTIME support to net_context"
+	select NET_PKT_TXTIME
+	help
+	  It is possible to add information when the outgoing network packet
+	  should be sent. The TX time information should be placed into
+	  ancillary data field in sendmsg call.
 
 config NET_TEST
 	bool "Network Testing"
@@ -474,16 +497,23 @@ config NET_BUF_DATA_POOL_SIZE
 
 config NET_HEADERS_ALWAYS_CONTIGUOUS
 	bool
-	default n
 	help
 	  This a hidden option, which one should use with a lot of care.
 	  NO bug reports will be accepted if that option is enabled!
 	  You are warned.
-	  If you are 100% sure the headers memore space is always in a
+	  If you are 100% sure the headers memory space is always in a
 	  contiguous space, this will save stack usage and ROM in net core.
 	  This is a possible case when using IPv4 only, with
 	  NET_BUF_FIXED_DATA_SIZE enabled and NET_BUF_DATA_SIZE of 128 for
 	  instance.
+
+config NET_IF_USERSPACE_ACCESS
+	bool "Allow userspace app to manipulate network interface"
+	depends on USERSPACE
+	help
+	  Only enable this if you want a userspace application to manipulate
+	  network interface. Currently this is limited to add or remove
+	  IP addresses. By default this is not allowed.
 
 choice
 	prompt "Default Network Interface"
@@ -516,6 +546,15 @@ config NET_DEFAULT_IF_DUMMY
 	bool "Dummy testing interface"
 	depends on NET_L2_DUMMY
 
+config NET_DEFAULT_IF_CANBUS
+	bool "6LoCAN (IPv6 over CAN) interface"
+	depends on NET_L2_CANBUS
+
+config NET_DEFAULT_IF_CANBUS_RAW
+	bool "Socket CAN interface"
+	depends on NET_L2_CANBUS_RAW
+
+
 endchoice
 
 config NET_PKT_TIMESTAMP
@@ -525,14 +564,32 @@ config NET_PKT_TIMESTAMP
 	  example in gPTP which needs to know how long it takes to send
 	  a network packet.
 
+config NET_PKT_TIMESTAMP_THREAD
+	bool "Create TX timestamp thread"
+	default y if NET_GPTP
+	depends on NET_PKT_TIMESTAMP
+	help
+	  Create a TX timestamp thread that will pass the timestamped network
+	  packets to some other module like gPTP for further processing.
+	  If you just want to timestamp network packets and get information
+	  how long the network packets flow in the system, you can disable
+	  the thread support.
+
 config NET_PKT_TIMESTAMP_STACK_SIZE
 	int "Timestamp thread stack size"
 	default 1024
-	depends on NET_PKT_TIMESTAMP
+	depends on NET_PKT_TIMESTAMP_THREAD
 	help
 	  Set the timestamp thread stack size in bytes. The timestamp
 	  thread waits for timestamped TX frames and calls registered
 	  callbacks.
+
+config NET_PKT_TXTIME
+	bool "Enable network packet TX time support"
+	help
+	  Enable network packet TX time support. This is needed for
+	  when the application wants to set the exact time when the network
+	  packet should be sent.
 
 config NET_PROMISCUOUS_MODE
 	bool "Enable promiscuous mode support [EXPERIMENTAL]"

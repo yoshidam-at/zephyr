@@ -6,7 +6,7 @@
 
 #include <kernel.h>
 #include <arch/cpu.h>
-#include <uart.h>
+#include <drivers/uart.h>
 
 
 /* UART REGISTERS DEFINITIONS */
@@ -155,8 +155,8 @@ static void uart_miv_poll_out(struct device *dev,
 {
 	volatile struct uart_miv_regs_t *uart = DEV_UART(dev);
 
-	while (!(uart->status & STATUS_TXRDY_MASK))
-		;
+	while (!(uart->status & STATUS_TXRDY_MASK)) {
+	}
 
 	uart->tx = c;
 }
@@ -343,7 +343,7 @@ static int uart_miv_init(struct device *dev)
 	const struct uart_miv_device_config *const cfg = DEV_CFG(dev);
 	volatile struct uart_miv_regs_t *uart = DEV_UART(dev);
 	/* Calculate divider value to set baudrate */
-	u16_t baud_value = (cfg->sys_clk_freq / (16 * cfg->baud_rate)) - 1;
+	u16_t baud_value = (cfg->sys_clk_freq / (cfg->baud_rate * 16U)) - 1;
 
 	/* Set baud rate */
 	uart->ctrlreg1 = (u8_t)(baud_value & BAUDVALUE_LSB);

@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: STMicroelectronics MEMS sensors LSM303DLHC
-version: 0.1
 
 description: >
     This binding gives a base representation of LSM303DLHC magnetometer sensor
@@ -16,6 +15,3 @@ inherits:
 properties:
     compatible:
       constraint: "st,lsm303dlhc-magn"
-
-...
-

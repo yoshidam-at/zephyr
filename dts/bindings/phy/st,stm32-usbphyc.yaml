@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: STM32 USB HS PHY
-version: 0.1
 
 description: >
     This binding gives a base representation of the STM32 USB HS PHY controller
@@ -18,11 +17,7 @@ properties:
       constraint: "st,stm32-usbphyc"
 
     reg:
-      type: array
-      description: address and length of the usb phy control register set
-      generation: define
       category: required
 
-    "phy-cells":
+    "#phy-cells":
       description: should be 0
-...

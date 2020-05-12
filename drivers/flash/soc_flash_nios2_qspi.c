@@ -12,11 +12,11 @@
 #include <kernel.h>
 #include <device.h>
 #include <string.h>
-#include <flash.h>
+#include <drivers/flash.h>
 #include <errno.h>
 #include <init.h>
 #include <soc.h>
-#include <misc/util.h>
+#include <sys/util.h>
 #include "flash_priv.h"
 #include "altera_generic_quad_spi_controller2_regs.h"
 #include "altera_generic_quad_spi_controller2.h"
@@ -79,7 +79,7 @@ static int flash_nios2_qspi_erase(struct device *dev, off_t offset, size_t len)
 	if (((offset + len) > qspi_dev->data_end) ||
 			(0 != (erase_offset &
 			       (NIOS2_WRITE_BLOCK_SIZE - 1)))) {
-		LOG_ERR("erase failed at offset %ld", (long)offset);
+		LOG_ERR("erase failed at offset 0x%lx", (long)offset);
 		rc = -EINVAL;
 		goto qspi_erase_err;
 	}
@@ -87,7 +87,7 @@ static int flash_nios2_qspi_erase(struct device *dev, off_t offset, size_t len)
 	for (i = offset/qspi_dev->sector_size;
 			i < qspi_dev->number_of_sectors; i++) {
 
-		if ((remaining_length <= 0) ||
+		if ((remaining_length <= 0U) ||
 				erase_offset >= (offset + len)) {
 			break;
 		}
@@ -105,7 +105,7 @@ static int flash_nios2_qspi_erase(struct device *dev, off_t offset, size_t len)
 		}
 
 		/* calculate the byte size of data to be written in a sector */
-		length_to_erase = min(qspi_dev->sector_size - offset_in_block,
+		length_to_erase = MIN(qspi_dev->sector_size - offset_in_block,
 							remaining_length);
 
 		/* Erase sector */
@@ -138,7 +138,7 @@ static int flash_nios2_qspi_erase(struct device *dev, off_t offset, size_t len)
 
 		if ((flag_status & FLAG_STATUS_ERASE_ERROR) ||
 				(flag_status & FLAG_STATUS_PROTECTION_ERROR)) {
-			LOG_ERR("erase failed, Flag Status Reg:%x",
+			LOG_ERR("erase failed, Flag Status Reg:0x%x",
 								flag_status);
 			rc = -EIO;
 			goto qspi_erase_err;
@@ -237,7 +237,7 @@ static int flash_nios2_qspi_write_block(struct device *dev, int block_offset,
 
 		if ((flag_status & FLAG_STATUS_PROGRAM_ERROR) ||
 			(flag_status & FLAG_STATUS_PROTECTION_ERROR)) {
-			LOG_ERR("write failed, Flag Status Reg:%x",
+			LOG_ERR("write failed, Flag Status Reg:0x%x",
 								flag_status);
 			rc = -EIO; /* sector might be protected */
 			goto qspi_write_block_err;
@@ -272,7 +272,7 @@ static int flash_nios2_qspi_write(struct device *dev, off_t offset,
 	if ((data == NULL) || ((offset + len) > qspi_dev->data_end) ||
 			(0 != (write_offset &
 			       (NIOS2_WRITE_BLOCK_SIZE - 1)))) {
-		LOG_ERR("write failed at offset %ld", (long)offset);
+		LOG_ERR("write failed at offset 0x%lx", (long)offset);
 		rc = -EINVAL;
 		goto qspi_write_err;
 	}
@@ -280,7 +280,7 @@ static int flash_nios2_qspi_write(struct device *dev, off_t offset,
 	for (i = offset/qspi_dev->sector_size;
 			i < qspi_dev->number_of_sectors; i++) {
 
-		if (remaining_length <= 0) {
+		if (remaining_length <= 0U) {
 			break;
 		}
 
@@ -297,7 +297,7 @@ static int flash_nios2_qspi_write(struct device *dev, off_t offset,
 		}
 
 		/* calculate the byte size of data to be written in a sector */
-		length_to_write = min(qspi_dev->sector_size - offset_in_block,
+		length_to_write = MIN(qspi_dev->sector_size - offset_in_block,
 							remaining_length);
 
 		rc = flash_nios2_qspi_write_block(dev,
@@ -337,7 +337,7 @@ static int flash_nios2_qspi_read(struct device *dev, off_t offset,
 	 */
 	if ((data == NULL) || ((offset + len) > qspi_dev->data_end) ||
 			(0 != (read_offset & (NIOS2_WRITE_BLOCK_SIZE - 1)))) {
-		LOG_ERR("read failed at offset %ld", (long)offset);
+		LOG_ERR("read failed at offset 0x%lx", (long)offset);
 		rc = -EINVAL;
 		goto qspi_read_err;
 	}

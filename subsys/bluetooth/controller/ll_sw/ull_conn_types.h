@@ -22,6 +22,14 @@ struct ll_conn {
 	u16_t apto_expire;
 #endif /* CONFIG_BT_CTLR_LE_PING */
 
+#if defined(CONFIG_BT_CTLR_DATA_LENGTH)
+	u16_t default_tx_octets;
+
+#if defined(CONFIG_BT_CTLR_PHY)
+	u16_t default_tx_time;
+#endif /* CONFIG_BT_CTLR_PHY */
+#endif /* CONFIG_BT_CTLR_DATA_LENGTH */
+
 	union {
 		struct {
 			u8_t fex_valid:1;
@@ -29,6 +37,7 @@ struct ll_conn {
 
 		struct {
 			u8_t fex_valid:1;
+			u32_t force;
 			u32_t ticks_to_offset;
 		} slave;
 
@@ -79,9 +88,6 @@ struct ll_conn {
 		struct {
 			u8_t  initiate;
 			u8_t  error_code;
-			u8_t  rand[8];
-			u8_t  ediv[2];
-			u8_t  ltk[16];
 			u8_t  skd[16];
 		} encryption;
 #endif /* CONFIG_BT_CTLR_LE_ENC */
@@ -109,6 +115,19 @@ struct ll_conn {
 			u8_t reason;
 		} node_rx;
 	} llcp_terminate;
+
+#if defined(CONFIG_BT_CTLR_LE_ENC)
+	struct {
+		u8_t req;
+		u8_t ack;
+		u8_t pause_rx:1;
+		u8_t pause_tx:1;
+		u8_t refresh:1;
+		u8_t ediv[2];
+		u8_t rand[8];
+		u8_t ltk[16];
+	} llcp_enc;
+#endif /* CONFIG_BT_CTLR_LE_ENC */
 
 #if defined(CONFIG_BT_CTLR_CONN_PARAM_REQ)
 	struct {
@@ -173,6 +192,7 @@ struct ll_conn {
 #define LLCP_PHY_STATE_UPD      3
 		u8_t tx:3;
 		u8_t rx:3;
+		u8_t pause_tx:1;
 		u8_t flags:1;
 		u8_t cmd:1;
 	} llcp_phy;
@@ -182,11 +202,10 @@ struct ll_conn {
 	u8_t phy_pref_rx:3;
 #endif /* CONFIG_BT_CTLR_PHY */
 
-#if defined(CONFIG_BT_CTLR_LE_ENC)
-	u8_t  pause_rx:1;
-	u8_t  pause_tx:1;
-	u8_t  refresh:1;
-#endif /* CONFIG_BT_CTLR_LE_ENC */
+#if defined(CONFIG_BT_CTLR_LLID_DATA_START_EMPTY)
+	/* Detect empty L2CAP start frame */
+	u8_t  start_empty:1;
+#endif /* CONFIG_BT_CTLR_LLID_DATA_START_EMPTY */
 
 	struct node_tx *tx_head;
 	struct node_tx *tx_ctrl;

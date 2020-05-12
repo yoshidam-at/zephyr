@@ -33,7 +33,7 @@
 
 #define THREAD_STACK		(384 + CONFIG_TEST_EXTRA_STACKSIZE)
 
-#define TEST_TICKS_TO_SLEEP	50
+#define TEST_TICKS_TO_SLEEP	(CONFIG_SYS_CLOCK_TICKS_PER_SEC / 2)
 
 /* Helper thread data */
 static K_THREAD_STACK_DEFINE(helper_tstack, THREAD_STACK);
@@ -103,7 +103,8 @@ static void test_early_sleep(void)
 	k_thread_priority_set(k_current_get(), 0);
 
 	TC_PRINT("msec per tick: %lld.%03lld, ticks to sleep: %d\n",
-			__ticks_to_ms(1000) / 1000, __ticks_to_ms(1000) % 1000,
+			__ticks_to_ms(1000) / 1000U,
+			__ticks_to_ms(1000) % 1000,
 			TEST_TICKS_TO_SLEEP);
 
 	/* Create a lower priority thread */

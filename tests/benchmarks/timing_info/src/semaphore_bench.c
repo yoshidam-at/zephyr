@@ -63,7 +63,7 @@ void semaphore_bench(void)
 	k_sleep(1000);
 
 
-	/* u64_t test_time1 = _tsc_read(); */
+	/* u64_t test_time1 = z_tsc_read(); */
 	sem_end_time = (__common_var_swap_end_time);
 	u32_t sem_cycles = sem_end_time - sem_start_time;
 
@@ -152,8 +152,10 @@ void mutex_bench(void)
 		/* If timer interrupt occurs we need to omit that sample*/
 		s64_t after = k_uptime_get();
 
-		if (after - before)
+		if (after - before) {
 			continue;
+		}
+
 		count++;
 
 		mutex_lock_diff += (mutex_lock_end_time -

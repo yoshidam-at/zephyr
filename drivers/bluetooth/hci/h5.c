@@ -12,11 +12,11 @@
 #include <zephyr.h>
 
 #include <init.h>
-#include <uart.h>
-#include <misc/util.h>
-#include <misc/byteorder.h>
-#include <misc/stack.h>
-#include <misc/printk.h>
+#include <drivers/uart.h>
+#include <sys/util.h>
+#include <sys/byteorder.h>
+#include <debug/stack.h>
+#include <sys/printk.h>
 #include <string.h>
 
 #include <bluetooth/bluetooth.h>
@@ -408,16 +408,7 @@ static inline struct net_buf *get_evt_buf(u8_t evt)
 {
 	struct net_buf *buf;
 
-	switch (evt) {
-	case BT_HCI_EVT_CMD_COMPLETE:
-	case BT_HCI_EVT_CMD_STATUS:
-		buf = bt_buf_get_cmd_complete(K_NO_WAIT);
-		break;
-	default:
-		buf = bt_buf_get_rx(BT_BUF_EVT, K_NO_WAIT);
-		break;
-	}
-
+	buf = bt_buf_get_evt(evt, false, K_NO_WAIT);
 	if (buf) {
 		net_buf_add_u8(h5.rx_buf, evt);
 	}
@@ -761,7 +752,7 @@ static const struct bt_hci_driver drv = {
 	.send		= h5_queue,
 };
 
-static int _bt_uart_init(struct device *unused)
+static int bt_uart_init(struct device *unused)
 {
 	ARG_UNUSED(unused);
 
@@ -776,4 +767,4 @@ static int _bt_uart_init(struct device *unused)
 	return 0;
 }
 
-SYS_INIT(_bt_uart_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
+SYS_INIT(bt_uart_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);

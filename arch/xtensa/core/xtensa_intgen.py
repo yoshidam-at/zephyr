@@ -29,8 +29,7 @@ def cprint(s):
         return
     if s.find("}") >= 0:
         cindent -= 1
-    for xx in range(cindent):
-        s = "\t" + s
+    s = cindent*"\t" + s
     print(s)
     if s.find("{") >= 0:
         cindent += 1
@@ -95,7 +94,7 @@ cprint("")
 
 # Re-include the core-isa header and be sure our definitions match, for sanity
 cprint("#include <xtensa/config/core-isa.h>")
-cprint("#include <misc/util.h>")
+cprint("#include <sys/util.h>")
 cprint("#include <sw_isr_table.h>")
 cprint("")
 for l in ints_by_lvl:
@@ -139,4 +138,3 @@ for lvl in ints_by_lvl:
     cprint("return mask;")
     cprint("}")
     cprint("")
-

@@ -16,7 +16,7 @@ LOG_MODULE_REGISTER(net_ieee802154_shell, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 #include <stdlib.h>
 #include <shell/shell.h>
 #include <shell/shell_uart.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 
 #include <net/net_if.h>
 #include <net/ieee802154_mgmt.h>
@@ -591,8 +591,7 @@ static int cmd_ieee802154_get_tx_power(const struct shell *shell,
 	return 0;
 }
 
-SHELL_CREATE_STATIC_SUBCMD_SET(ieee802154_commands)
-{
+SHELL_STATIC_SUBCMD_SET_CREATE(ieee802154_commands,
 	SHELL_CMD(ack, NULL,
 		  "<set/1 | unset/0> Set auto-ack flag",
 		  cmd_ieee802154_ack),
@@ -637,7 +636,7 @@ SHELL_CREATE_STATIC_SUBCMD_SET(ieee802154_commands)
 		  "<-18/-7/-4/-2/0/1/2/3/5> Set TX power",
 		  cmd_ieee802154_set_tx_power),
 	SHELL_SUBCMD_SET_END
-};
+);
 
 SHELL_CMD_REGISTER(ieee802154, &ieee802154_commands, "IEEE 802.15.4 commands",
 		   NULL);

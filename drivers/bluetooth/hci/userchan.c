@@ -9,8 +9,8 @@
 #include <zephyr.h>
 #include <device.h>
 #include <init.h>
-#include <misc/util.h>
-#include <misc/byteorder.h>
+#include <sys/util.h>
+#include <sys/byteorder.h>
 
 #include <errno.h>
 #include <stddef.h>
@@ -57,16 +57,11 @@ static int bt_dev_index = -1;
 
 static struct net_buf *get_rx(const u8_t *buf)
 {
-	if (buf[0] == H4_EVT && (buf[1] == BT_HCI_EVT_CMD_COMPLETE ||
-				 buf[1] == BT_HCI_EVT_CMD_STATUS)) {
-		return bt_buf_get_cmd_complete(K_FOREVER);
+	if (buf[0] == H4_EVT) {
+		return bt_buf_get_evt(buf[1], false, K_FOREVER);
 	}
 
-	if (buf[0] == H4_ACL) {
-		return bt_buf_get_rx(BT_BUF_ACL_IN, K_FOREVER);
-	} else {
-		return bt_buf_get_rx(BT_BUF_EVT, K_FOREVER);
-	}
+	return bt_buf_get_rx(BT_BUF_ACL_IN, K_FOREVER);
 }
 
 static bool uc_ready(void)
@@ -213,7 +208,7 @@ static const struct bt_hci_driver drv = {
 	.send		= uc_send,
 };
 
-static int _bt_uc_init(struct device *unused)
+static int bt_uc_init(struct device *unused)
 {
 	ARG_UNUSED(unused);
 
@@ -222,7 +217,7 @@ static int _bt_uc_init(struct device *unused)
 	return 0;
 }
 
-SYS_INIT(_bt_uc_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
+SYS_INIT(bt_uc_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
 
 static void cmd_bt_dev_found(char *argv, int offset)
 {

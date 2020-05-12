@@ -12,6 +12,7 @@
 #ifndef _ASMLANGUAGE
 #include <string.h>
 #include <stdbool.h>
+#include <stddef.h> /* For size_t */
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,13 +35,14 @@ extern "C" {
 
 extern void FatalErrorHandler(void);
 extern void ReservedInterruptHandler(unsigned int intNo);
+extern void z_xtensa_fatal_error(unsigned int reason, const z_arch_esf_t *esf);
 
 /* Defined in xtensa_context.S */
-extern void _xt_coproc_init(void);
+extern void z_xt_coproc_init(void);
 
 extern K_THREAD_STACK_DEFINE(_interrupt_stack, CONFIG_ISR_STACK_SIZE);
 
-static ALWAYS_INLINE _cpu_t *_arch_curr_cpu(void)
+static ALWAYS_INLINE _cpu_t *z_arch_curr_cpu(void)
 {
 #ifdef CONFIG_XTENSA_ASM2
 	void *val;
@@ -70,7 +72,7 @@ static ALWAYS_INLINE void kernel_arch_init(void)
 	cpu0->nested = 0;
 
 #if CONFIG_XTENSA_ASM2
-	cpu0->irq_stack = (K_THREAD_STACK_BUFFER(_interrupt_stack) +
+	cpu0->irq_stack = (Z_THREAD_STACK_BUFFER(_interrupt_stack) +
 			   CONFIG_ISR_STACK_SIZE);
 
 	/* The asm2 scheme keeps the kernel pointer in MISC0 for easy
@@ -86,11 +88,11 @@ static ALWAYS_INLINE void kernel_arch_init(void)
 	/* Initialize co-processor management for threads.
 	 * Leave CPENABLE alone.
 	 */
-	_xt_coproc_init();
+	z_xt_coproc_init();
 #endif
 
 #ifdef CONFIG_INIT_STACKS
-	memset(K_THREAD_STACK_BUFFER(_interrupt_stack), 0xAA,
+	memset(Z_THREAD_STACK_BUFFER(_interrupt_stack), 0xAA,
 	       CONFIG_ISR_STACK_SIZE);
 #endif
 }
@@ -110,7 +112,7 @@ static ALWAYS_INLINE void kernel_arch_init(void)
  */
 #if !CONFIG_USE_SWITCH
 static ALWAYS_INLINE void
-_set_thread_return_value(struct k_thread *thread, unsigned int value)
+z_set_thread_return_value(struct k_thread *thread, unsigned int value)
 {
 	thread->callee_saved.retval = value;
 }
@@ -118,13 +120,11 @@ _set_thread_return_value(struct k_thread *thread, unsigned int value)
 
 extern void k_cpu_atomic_idle(unsigned int key);
 
-#include <stddef.h> /* For size_t */
-
 #ifdef __cplusplus
 }
 #endif
 
-#define _is_in_isr() (_arch_curr_cpu()->nested != 0U)
+#define z_is_in_isr() (z_arch_curr_cpu()->nested != 0U)
 
 #endif /* _ASMLANGUAGE */
 

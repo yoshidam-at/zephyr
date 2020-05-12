@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <drivers/system_timer.h>
+#include <drivers/timer/system_timer.h>
 #include <sys_clock.h>
 #include <spinlock.h>
 #include <xtensa_rtos.h>
@@ -11,7 +11,7 @@
 #define TIMER_IRQ UTIL_CAT(XCHAL_TIMER,		\
 			   UTIL_CAT(CONFIG_XTENSA_TIMER_ID, _INTERRUPT))
 
-#define CYC_PER_TICK (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC	\
+#define CYC_PER_TICK (sys_clock_hw_cycles_per_sec()	\
 		      / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 #define MAX_TICKS ((0xffffffffu - CYC_PER_TICK) / CYC_PER_TICK)
 #define MIN_DELAY 1000
@@ -54,7 +54,7 @@ static void ccompare_isr(void *arg)
 	}
 
 	k_spin_unlock(&lock, key);
-	z_clock_announce(dticks);
+	z_clock_announce(IS_ENABLED(CONFIG_TICKLESS_KERNEL) ? dticks : 1);
 }
 
 /* The legacy Xtensa platform code handles the timer interrupt via a
@@ -62,7 +62,7 @@ static void ccompare_isr(void *arg)
  * pervasive.
  */
 #ifndef CONFIG_XTENSA_ASM2
-void _timer_int_handler(void *arg)
+void timer_int_handler(void *arg)
 {
 	return ccompare_isr(arg);
 }
@@ -82,7 +82,7 @@ void z_clock_set_timeout(s32_t ticks, bool idle)
 
 #if defined(CONFIG_TICKLESS_KERNEL) && !defined(CONFIG_QEMU_TICKLESS_WORKAROUND)
 	ticks = ticks == K_FOREVER ? MAX_TICKS : ticks;
-	ticks = max(min(ticks - 1, (s32_t)MAX_TICKS), 0);
+	ticks = MAX(MIN(ticks - 1, (s32_t)MAX_TICKS), 0);
 
 	k_spinlock_key_t key = k_spin_lock(&lock);
 	u32_t curr = ccount(), cyc;
@@ -114,7 +114,7 @@ u32_t z_clock_elapsed(void)
 	return ret;
 }
 
-u32_t _timer_cycle_get_32(void)
+u32_t z_timer_cycle_get_32(void)
 {
 	return ccount();
 }

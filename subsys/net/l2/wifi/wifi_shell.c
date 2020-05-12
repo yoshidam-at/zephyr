@@ -16,7 +16,7 @@ LOG_MODULE_REGISTER(net_wifi_shell, LOG_LEVEL_INF);
 #include <stdlib.h>
 #include <shell/shell.h>
 #include <shell/shell_uart.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <init.h>
 
 #include <net/net_if.h>
@@ -64,7 +64,7 @@ static void handle_wifi_scan_result(struct net_mgmt_event_callback *cb)
 
 	scan_result++;
 
-	if (scan_result == 1) {
+	if (scan_result == 1U) {
 		print(context.shell, SHELL_NORMAL,
 		      "%-4s | %-32s %-5s | %-4s | %-4s | %-5s\n",
 		      "Num", "SSID", "(len)", "Chan", "RSSI", "Sec");
@@ -161,7 +161,7 @@ static int __wifi_args_to_params(size_t argc, char *argv[],
 
 	/* SSID length */
 	params->ssid_length = strtol(argv[1], &endptr, 10);
-	if (*endptr != '\0' || params->ssid_length <= 2) {
+	if (*endptr != '\0' || params->ssid_length <= 2U) {
 		return -EINVAL;
 	}
 
@@ -172,7 +172,7 @@ static int __wifi_args_to_params(size_t argc, char *argv[],
 			return -EINVAL;
 		}
 
-		if (params->channel == 0) {
+		if (params->channel == 0U) {
 			params->channel = WIFI_CHANNEL_ANY;
 		}
 
@@ -307,18 +307,16 @@ static int cmd_wifi_ap_disable(const struct shell *shell, size_t argc,
 	return 0;
 }
 
-SHELL_CREATE_STATIC_SUBCMD_SET(wifi_cmd_ap)
-{
+SHELL_STATIC_SUBCMD_SET_CREATE(wifi_cmd_ap,
 	SHELL_CMD(enable, NULL, "<SSID> <SSID length> [channel] [PSK]",
 		  cmd_wifi_ap_enable),
 	SHELL_CMD(disable, NULL,
 		  "Disable Access Point mode",
 		  cmd_wifi_ap_disable),
 	SHELL_SUBCMD_SET_END
-};
+);
 
-SHELL_CREATE_STATIC_SUBCMD_SET(wifi_commands)
-{
+SHELL_STATIC_SUBCMD_SET_CREATE(wifi_commands,
 	SHELL_CMD(connect, NULL,
 		  "\"<SSID>\"\n<SSID length>\n<channel number (optional), "
 		  "0 means all>\n"
@@ -329,7 +327,7 @@ SHELL_CREATE_STATIC_SUBCMD_SET(wifi_commands)
 	SHELL_CMD(scan, NULL, "Scan Wifi AP", cmd_wifi_scan),
 	SHELL_CMD(ap, &wifi_cmd_ap, "Access Point mode commands", NULL),
 	SHELL_SUBCMD_SET_END
-};
+);
 
 SHELL_CMD_REGISTER(wifi, &wifi_commands, "Wifi commands", NULL);
 

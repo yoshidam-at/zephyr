@@ -14,7 +14,7 @@
 
 #include <kernel.h>
 #include <init.h>
-#include <drivers/system_timer.h>
+#include <drivers/timer/system_timer.h>
 
 /* Weak-linked noop defaults for optional driver interfaces: */
 
@@ -28,8 +28,8 @@ int __weak z_clock_driver_init(struct device *device)
 	return 0;
 }
 
-int __weak z_clock_device_ctrl(struct device *device,
-				 u32_t ctrl_command, void *context)
+int __weak z_clock_device_ctrl(struct device *device, u32_t ctrl_command,
+			       void *context, device_pm_cb cb, void *arg)
 {
 	return 0;
 }

@@ -9,6 +9,8 @@
 #include <wait_q.h>
 #include <posix/pthread.h>
 
+s64_t timespec_to_timeoutms(const struct timespec *abstime);
+
 #define MUTEX_MAX_REC_LOCK 32767
 
 /*
@@ -22,7 +24,7 @@ static int acquire_mutex(pthread_mutex_t *m, int timeout)
 {
 	int rc = 0, key = irq_lock();
 
-	if (m->lock_count == 0 && m->owner == NULL) {
+	if (m->lock_count == 0U && m->owner == NULL) {
 		m->lock_count++;
 		m->owner = pthread_self();
 
@@ -48,7 +50,7 @@ static int acquire_mutex(pthread_mutex_t *m, int timeout)
 		return EINVAL;
 	}
 
-	rc = _pend_current_thread(key, &m->wait_q, timeout);
+	rc = z_pend_curr_irqlock(key, &m->wait_q, timeout);
 	if (rc != 0) {
 		rc = ETIMEDOUT;
 	}
@@ -73,9 +75,10 @@ int pthread_mutex_trylock(pthread_mutex_t *m)
  * See IEEE 1003.1
  */
 int pthread_mutex_timedlock(pthread_mutex_t *m,
-			    const struct timespec *to)
+			    const struct timespec *abstime)
 {
-	return acquire_mutex(m, _ts_to_ms(to));
+	s32_t timeout = (s32_t)timespec_to_timeoutms(abstime);
+	return acquire_mutex(m, timeout);
 }
 
 /**
@@ -89,13 +92,13 @@ int pthread_mutex_init(pthread_mutex_t *m,
 	const pthread_mutexattr_t *mattr;
 
 	m->owner = NULL;
-	m->lock_count = 0;
+	m->lock_count = 0U;
 
 	mattr = (attr == NULL) ? &def_attr : attr;
 
 	m->type = mattr->type;
 
-	_waitq_init(&m->wait_q);
+	z_waitq_init(&m->wait_q);
 
 	return 0;
 }
@@ -127,21 +130,21 @@ int pthread_mutex_unlock(pthread_mutex_t *m)
 		return EPERM;
 	}
 
-	if (m->lock_count == 0) {
+	if (m->lock_count == 0U) {
 		irq_unlock(key);
 		return EINVAL;
 	}
 
 	m->lock_count--;
 
-	if (m->lock_count == 0) {
-		thread = _unpend_first_thread(&m->wait_q);
+	if (m->lock_count == 0U) {
+		thread = z_unpend_first_thread(&m->wait_q);
 		if (thread) {
 			m->owner = (pthread_t)thread;
 			m->lock_count++;
-			_ready_thread(thread);
-			_set_thread_return_value(thread, 0);
-			_reschedule(key);
+			z_ready_thread(thread);
+			z_set_thread_return_value(thread, 0);
+			z_reschedule_irqlock(key);
 			return 0;
 		}
 		m->owner = NULL;

@@ -10,12 +10,12 @@
 #include <string.h>
 #include <errno.h>
 #include <stdbool.h>
-#include <atomic.h>
-#include <misc/byteorder.h>
-#include <misc/util.h>
-#include <misc/slist.h>
-#include <misc/stack.h>
-#include <misc/__assert.h>
+#include <sys/atomic.h>
+#include <sys/byteorder.h>
+#include <sys/util.h>
+#include <sys/slist.h>
+#include <debug/stack.h>
+#include <sys/__assert.h>
 
 #include <bluetooth/hci.h>
 #include <bluetooth/bluetooth.h>
@@ -33,6 +33,7 @@
 #include "keys.h"
 #include "smp.h"
 #include "att_internal.h"
+#include "gatt_internal.h"
 
 NET_BUF_POOL_DEFINE(acl_tx_pool, CONFIG_BT_L2CAP_TX_BUF_COUNT,
 		    BT_L2CAP_BUF_SIZE(CONFIG_BT_L2CAP_TX_MTU),
@@ -67,14 +68,10 @@ const struct bt_conn_auth_cb *bt_auth;
 static struct bt_conn conns[CONFIG_BT_MAX_CONN];
 static struct bt_conn_cb *callback_list;
 
-struct conn_tx_cb {
-	bt_conn_tx_cb_t cb;
-};
-
-#define conn_tx(buf) ((struct conn_tx_cb *)net_buf_user_data(buf))
+#define conn_tx(buf) ((struct bt_conn_tx_data *)net_buf_user_data(buf))
 
 static struct bt_conn_tx conn_tx[CONFIG_BT_CONN_TX_MAX];
-static sys_slist_t free_tx = SYS_SLIST_STATIC_INIT(&free_tx);
+K_FIFO_DEFINE(free_tx);
 
 #if defined(CONFIG_BT_BREDR)
 static struct bt_conn sco_conns[CONFIG_BT_MAX_SCO_CONN];
@@ -135,6 +132,10 @@ static void notify_connected(struct bt_conn *conn)
 		if (cb->connected) {
 			cb->connected(conn, conn->err);
 		}
+	}
+
+	if (!conn->err) {
+		bt_gatt_connected(conn);
 	}
 }
 
@@ -284,6 +285,42 @@ static void conn_le_update_timeout(struct k_work *work)
 #endif
 
 	atomic_set_bit(conn->flags, BT_CONN_SLAVE_PARAM_UPDATE);
+}
+
+static void tx_free(struct bt_conn_tx *tx)
+{
+	if (tx->conn) {
+		bt_conn_unref(tx->conn);
+		tx->conn = NULL;
+	}
+
+	tx->data.cb = NULL;
+	tx->data.user_data = NULL;
+	k_fifo_put(&free_tx, tx);
+}
+
+static void tx_notify_cb(struct k_work *work)
+{
+	struct bt_conn_tx *tx = CONTAINER_OF(work, struct bt_conn_tx, work);
+	struct bt_conn *conn;
+	struct bt_conn_tx_data data;
+
+	BT_DBG("tx %p conn %p cb %p user_data %p", tx, tx->conn, tx->data.cb,
+	       tx->data.user_data);
+
+	/* Copy over the params */
+	conn = bt_conn_ref(tx->conn);
+	data = tx->data;
+
+	/* Free up TX notify since there may be user waiting */
+	tx_free(tx);
+
+	/* Run the callback, at this point it should be safe to allocate new
+	 * buffers since the TX should have been unblocked by tx_free.
+	 */
+	data.cb(conn, data.user_data);
+
+	bt_conn_unref(conn);
 }
 
 static struct bt_conn *conn_new(void)
@@ -591,7 +628,7 @@ int bt_conn_auth_pincode_entry(struct bt_conn *conn, const char *pin)
 		return -EINVAL;
 	}
 
-	if (conn->required_sec_level == BT_SECURITY_HIGH && len < 16) {
+	if (conn->required_sec_level == BT_SECURITY_L3 && len < 16) {
 		BT_WARN("PIN code for %s is not 16 bytes wide",
 			bt_addr_str(&conn->br.dst));
 		return -EPERM;
@@ -614,7 +651,7 @@ void bt_conn_pin_code_req(struct bt_conn *conn)
 	if (bt_auth && bt_auth->pincode_entry) {
 		bool secure = false;
 
-		if (conn->required_sec_level == BT_SECURITY_HIGH) {
+		if (conn->required_sec_level == BT_SECURITY_L3) {
 			secure = true;
 		}
 
@@ -707,6 +744,21 @@ static int ssp_confirm_neg_reply(struct bt_conn *conn)
 				    NULL);
 }
 
+void bt_conn_ssp_auth_complete(struct bt_conn *conn, u8_t status)
+{
+	if (!status) {
+		bool bond = !atomic_test_bit(conn->flags, BT_CONN_BR_NOBOND);
+
+		if (bt_auth && bt_auth->pairing_complete) {
+			bt_auth->pairing_complete(conn, bond);
+		}
+	} else {
+		if (bt_auth && bt_auth->pairing_failed) {
+			bt_auth->pairing_failed(conn, status);
+		}
+	}
+}
+
 void bt_conn_ssp_auth(struct bt_conn *conn, u32_t passkey)
 {
 	conn->br.pairing_method = ssp_pair_method(conn);
@@ -715,7 +767,7 @@ void bt_conn_ssp_auth(struct bt_conn *conn, u32_t passkey)
 	 * If local required security is HIGH then MITM is mandatory.
 	 * MITM protection is no achievable when SSP 'justworks' is applied.
 	 */
-	if (conn->required_sec_level > BT_SECURITY_MEDIUM &&
+	if (conn->required_sec_level > BT_SECURITY_L2 &&
 	    conn->br.pairing_method == JUST_WORKS) {
 		BT_DBG("MITM protection infeasible for required security");
 		ssp_confirm_neg_reply(conn);
@@ -932,13 +984,13 @@ u8_t bt_conn_enc_key_size(struct bt_conn *conn)
 	return 0;
 }
 
-void bt_conn_security_changed(struct bt_conn *conn)
+void bt_conn_security_changed(struct bt_conn *conn, enum bt_security_err err)
 {
 	struct bt_conn_cb *cb;
 
 	for (cb = callback_list; cb; cb = cb->_next) {
 		if (cb->security_changed) {
-			cb->security_changed(conn, conn->sec_level);
+			cb->security_changed(conn, conn->sec_level, err);
 		}
 	}
 }
@@ -951,12 +1003,12 @@ static int start_security(struct bt_conn *conn)
 			return -EBUSY;
 		}
 
-		if (conn->required_sec_level > BT_SECURITY_HIGH) {
+		if (conn->required_sec_level > BT_SECURITY_L3) {
 			return -ENOTSUP;
 		}
 
 		if (bt_conn_get_io_capa() == BT_IO_NO_INPUT_OUTPUT &&
-		    conn->required_sec_level > BT_SECURITY_MEDIUM) {
+		    conn->required_sec_level > BT_SECURITY_L2) {
 			return -EINVAL;
 		}
 
@@ -968,33 +1020,9 @@ static int start_security(struct bt_conn *conn)
 #if defined(CONFIG_BT_CENTRAL) && defined(CONFIG_BT_SMP)
 	case BT_HCI_ROLE_MASTER:
 	{
-		if (!conn->le.keys) {
-			conn->le.keys = bt_keys_find(BT_KEYS_LTK_P256,
-						     conn->id, &conn->le.dst);
-			if (!conn->le.keys) {
-				conn->le.keys = bt_keys_find(BT_KEYS_LTK,
-							     conn->id,
-							     &conn->le.dst);
-			}
-		}
-
-		if (!conn->le.keys ||
-		    !(conn->le.keys->keys & (BT_KEYS_LTK | BT_KEYS_LTK_P256))) {
+		if (!bt_smp_keys_check(conn)) {
 			return bt_smp_send_pairing_req(conn);
 		}
-
-		if (conn->required_sec_level > BT_SECURITY_MEDIUM &&
-		    !(conn->le.keys->flags & BT_KEYS_AUTHENTICATED)) {
-			return bt_smp_send_pairing_req(conn);
-		}
-
-		if (conn->required_sec_level > BT_SECURITY_HIGH &&
-		    !(conn->le.keys->flags & BT_KEYS_AUTHENTICATED) &&
-		    !(conn->le.keys->keys & BT_KEYS_LTK_P256) &&
-		    !(conn->le.keys->enc_size == BT_SMP_MAX_ENC_KEY_SIZE)) {
-			return bt_smp_send_pairing_req(conn);
-		}
-
 		/* LE SC LTK and legacy master LTK are stored in same place */
 		return bt_conn_le_start_encryption(conn,
 						   conn->le.keys->ltk.rand,
@@ -1012,7 +1040,7 @@ static int start_security(struct bt_conn *conn)
 	}
 }
 
-int bt_conn_security(struct bt_conn *conn, bt_security_t sec)
+int bt_conn_set_security(struct bt_conn *conn, bt_security_t sec)
 {
 	int err;
 
@@ -1021,7 +1049,7 @@ int bt_conn_security(struct bt_conn *conn, bt_security_t sec)
 	}
 
 	if (IS_ENABLED(CONFIG_BT_SMP_SC_ONLY) &&
-	    sec < BT_SECURITY_FIPS) {
+	    sec < BT_SECURITY_L4) {
 		return -EOPNOTSUPP;
 	}
 
@@ -1030,7 +1058,9 @@ int bt_conn_security(struct bt_conn *conn, bt_security_t sec)
 		return 0;
 	}
 
-	conn->required_sec_level = sec;
+	atomic_set_bit_to(conn->flags, BT_CONN_FORCE_PAIR,
+			  sec & BT_SECURITY_FORCE_PAIR);
+	conn->required_sec_level = sec & ~BT_SECURITY_FORCE_PAIR;
 
 	err = start_security(conn);
 
@@ -1147,9 +1177,10 @@ void bt_conn_recv(struct bt_conn *conn, struct net_buf *buf, u8_t flags)
 }
 
 int bt_conn_send_cb(struct bt_conn *conn, struct net_buf *buf,
-		    bt_conn_tx_cb_t cb)
+		    bt_conn_tx_cb_t cb, void *user_data)
 {
-	BT_DBG("conn handle %u buf len %u cb %p", conn->handle, buf->len, cb);
+	BT_DBG("conn handle %u buf len %u cb %p user_data %p", conn->handle,
+	       buf->len, cb, user_data);
 
 	if (conn->state != BT_CONN_CONNECTED) {
 		BT_ERR("not connected!");
@@ -1158,15 +1189,34 @@ int bt_conn_send_cb(struct bt_conn *conn, struct net_buf *buf,
 	}
 
 	conn_tx(buf)->cb = cb;
+	conn_tx(buf)->user_data = user_data;
 
 	net_buf_put(&conn->tx_queue, buf);
 	return 0;
 }
 
-static void tx_free(struct bt_conn_tx *tx)
+static bool conn_tx_internal(bt_conn_tx_cb_t cb)
 {
-	tx->cb = NULL;
-	sys_slist_prepend(&free_tx, &tx->node);
+	if (cb == att_pdu_sent || cb == att_cfm_sent || cb == att_rsp_sent ||
+#if defined(CONFIG_BT_SMP)
+#if defined(CONFIG_BT_PRIVACY)
+	    cb == smp_id_sent ||
+#endif /* CONFIG_BT_PRIVACY */
+#if defined(CONFIG_BT_SIGNING)
+	    cb == smp_sign_info_sent ||
+#endif /* CONFIG_BT_SIGNING */
+#if !defined(CONFIG_BT_SMP_SC_PAIR_ONLY)
+	    cb == smp_ident_sent ||
+#endif /* CONFIG_BT_SMP_SC_PAIR_ONLY */
+#endif /* CONFIG_BT_SMP */
+#if defined(CONFIG_BT_L2CAP_DYNAMIC_CHANNEL)
+	    cb == l2cap_chan_sdu_sent ||
+#endif /* CONFIG_BT_L2CAP_DYNAMIC_CHANNEL */
+	    cb == att_req_sent) {
+		return true;
+	}
+
+	return false;
 }
 
 void bt_conn_notify_tx(struct bt_conn *conn)
@@ -1176,11 +1226,19 @@ void bt_conn_notify_tx(struct bt_conn *conn)
 	BT_DBG("conn %p", conn);
 
 	while ((tx = k_fifo_get(&conn->tx_notify, K_NO_WAIT))) {
-		if (tx->cb) {
-			tx->cb(conn);
-		}
+		BT_DBG("cb %p user_data %p", tx->data.cb, tx->data.user_data);
 
-		tx_free(tx);
+		/* Only submit if there is a callback set */
+		if (tx->data.cb) {
+			/* Submit using RX thread if internal callback */
+			if (conn_tx_internal(tx->data.cb)) {
+				tx_notify_cb(&tx->work);
+			} else {
+				k_work_submit(&tx->work);
+			}
+		} else {
+			tx_free(tx);
+		}
 	}
 }
 
@@ -1200,42 +1258,52 @@ static void notify_tx(void)
 	}
 }
 
-static sys_snode_t *add_pending_tx(struct bt_conn *conn, bt_conn_tx_cb_t cb)
+static struct bt_conn_tx *add_pending_tx(struct bt_conn *conn,
+					 bt_conn_tx_cb_t cb, void *user_data)
 {
-	sys_snode_t *node;
+	struct bt_conn_tx *tx;
 	unsigned int key;
 
-	BT_DBG("conn %p cb %p", conn, cb);
+	BT_DBG("conn %p cb %p user_data %p", conn, cb, user_data);
 
-	__ASSERT(!sys_slist_is_empty(&free_tx), "No free conn TX contexts");
+	if (IS_ENABLED(CONFIG_BT_DEBUG_CONN)) {
+		tx = k_fifo_get(&free_tx, K_NO_WAIT);
+		if (!tx) {
+			BT_WARN("Unable to get a free conn_tx, yielding...");
+			tx = k_fifo_get(&free_tx, K_FOREVER);
+		}
+	} else {
+		tx = k_fifo_get(&free_tx, K_FOREVER);
+	}
 
-	node = sys_slist_get_not_empty(&free_tx);
-	CONTAINER_OF(node, struct bt_conn_tx, node)->cb = cb;
+	tx->conn = bt_conn_ref(conn);
+	k_work_init(&tx->work, tx_notify_cb);
+	tx->data.cb = cb;
+	tx->data.user_data = user_data;
 
 	key = irq_lock();
-	sys_slist_append(&conn->tx_pending, node);
+	sys_slist_append(&conn->tx_pending, &tx->node);
 	irq_unlock(key);
 
-	return node;
+	return tx;
 }
 
-static void remove_pending_tx(struct bt_conn *conn, sys_snode_t *node)
+static void remove_pending_tx(struct bt_conn *conn, struct bt_conn_tx *tx)
 {
 	unsigned int key;
 
 	key = irq_lock();
-	sys_slist_find_and_remove(&conn->tx_pending, node);
+	sys_slist_find_and_remove(&conn->tx_pending, &tx->node);
 	irq_unlock(key);
 
-	tx_free(CONTAINER_OF(node, struct bt_conn_tx, node));
+	tx_free(tx);
 }
 
 static bool send_frag(struct bt_conn *conn, struct net_buf *buf, u8_t flags,
 		      bool always_consume)
 {
 	struct bt_hci_acl_hdr *hdr;
-	bt_conn_tx_cb_t cb;
-	sys_snode_t *node;
+	struct bt_conn_tx *tx;
 	int err;
 
 	BT_DBG("conn %p buf %p len %u flags 0x%02x", conn, buf, buf->len,
@@ -1256,15 +1324,15 @@ static bool send_frag(struct bt_conn *conn, struct net_buf *buf, u8_t flags,
 	hdr->handle = sys_cpu_to_le16(bt_acl_handle_pack(conn->handle, flags));
 	hdr->len = sys_cpu_to_le16(buf->len - sizeof(*hdr));
 
-	cb = conn_tx(buf)->cb;
-	bt_buf_set_type(buf, BT_BUF_ACL_OUT);
+	/* Add to pending, it must be done before bt_buf_set_type */
+	tx = add_pending_tx(conn, conn_tx(buf)->cb, conn_tx(buf)->user_data);
 
-	node = add_pending_tx(conn, cb);
+	bt_buf_set_type(buf, BT_BUF_ACL_OUT);
 
 	err = bt_send(buf);
 	if (err) {
 		BT_ERR("Unable to send to driver (err %d)", err);
-		remove_pending_tx(conn, node);
+		remove_pending_tx(conn, tx);
 		goto fail;
 	}
 
@@ -1307,8 +1375,9 @@ static struct net_buf *create_frag(struct bt_conn *conn, struct net_buf *buf)
 
 	/* Fragments never have a TX completion callback */
 	conn_tx(frag)->cb = NULL;
+	conn_tx(frag)->user_data = NULL;
 
-	frag_len = min(conn_mtu(conn), net_buf_tailroom(frag));
+	frag_len = MIN(conn_mtu(conn), net_buf_tailroom(frag));
 
 	net_buf_add_mem(frag, buf->data, frag_len);
 	net_buf_pull(buf, frag_len);
@@ -1385,7 +1454,7 @@ int bt_conn_prepare_events(struct k_poll_event events[])
 
 	BT_DBG("");
 
-	conn_change.signaled = 0;
+	conn_change.signaled = 0U;
 	k_poll_event_init(&events[ev_count++], K_POLL_TYPE_SIGNAL,
 			  K_POLL_MODE_NOTIFY_ONLY, &conn_change);
 
@@ -1455,8 +1524,8 @@ struct bt_conn *bt_conn_add_le(const bt_addr_le_t *peer)
 
 	bt_addr_le_copy(&conn->le.dst, peer);
 #if defined(CONFIG_BT_SMP)
-	conn->sec_level = BT_SECURITY_LOW;
-	conn->required_sec_level = BT_SECURITY_LOW;
+	conn->sec_level = BT_SECURITY_L1;
+	conn->required_sec_level = BT_SECURITY_L1;
 #endif /* CONFIG_BT_SMP */
 	conn->type = BT_CONN_TYPE_LE;
 	conn->le.interval_min = BT_GAP_INIT_CONN_INT_MIN;
@@ -1764,12 +1833,14 @@ int bt_conn_get_info(const struct bt_conn *conn, struct bt_conn_info *info)
 
 	switch (conn->type) {
 	case BT_CONN_TYPE_LE:
+		info->le.dst = &conn->le.dst;
+		info->le.src = &bt_dev.id_addr[conn->id];
 		if (conn->role == BT_HCI_ROLE_MASTER) {
-			info->le.src = &conn->le.init_addr;
-			info->le.dst = &conn->le.resp_addr;
+			info->le.local = &conn->le.init_addr;
+			info->le.remote = &conn->le.resp_addr;
 		} else {
-			info->le.src = &conn->le.resp_addr;
-			info->le.dst = &conn->le.init_addr;
+			info->le.local = &conn->le.resp_addr;
+			info->le.remote = &conn->le.init_addr;
 		}
 		info->le.interval = conn->le.interval;
 		info->le.latency = conn->le.latency;
@@ -1855,10 +1926,12 @@ int bt_conn_disconnect(struct bt_conn *conn, u8_t reason)
 	 * and we could send LE Create Connection as soon as the remote
 	 * starts advertising.
 	 */
+#if !defined(CONFIG_BT_WHITELIST)
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
 	    conn->type == BT_CONN_TYPE_LE) {
 		bt_le_set_auto_conn(&conn->le.dst, NULL);
 	}
+#endif /* !defined(CONFIG_BT_WHITELIST) */
 
 	switch (conn->state) {
 	case BT_CONN_CONNECT_SCAN:
@@ -1906,21 +1979,174 @@ int bt_conn_disconnect(struct bt_conn *conn, u8_t reason)
 static void bt_conn_set_param_le(struct bt_conn *conn,
 				 const struct bt_le_conn_param *param)
 {
+	conn->le.interval_min = param->interval_min;
 	conn->le.interval_max = param->interval_max;
 	conn->le.latency = param->latency;
 	conn->le.timeout = param->timeout;
 }
 
+#if defined(CONFIG_BT_WHITELIST)
+int bt_le_whitelist_add(const bt_addr_le_t *addr)
+{
+	struct bt_hci_cp_le_add_dev_to_wl *cp;
+	struct net_buf *buf;
+	int err;
+
+	if (!(bt_dev.le.wl_entries < bt_dev.le.wl_size)) {
+		return -ENOMEM;
+	}
+
+	buf = bt_hci_cmd_create(BT_HCI_OP_LE_ADD_DEV_TO_WL, sizeof(*cp));
+	if (!buf) {
+		return -ENOBUFS;
+	}
+
+	cp = net_buf_add(buf, sizeof(*cp));
+	bt_addr_le_copy(&cp->addr, addr);
+
+	err = bt_hci_cmd_send_sync(BT_HCI_OP_LE_ADD_DEV_TO_WL, buf, NULL);
+	if (err) {
+		BT_ERR("Failed to add device to whitelist");
+
+		return err;
+	}
+
+	bt_dev.le.wl_entries++;
+
+	return 0;
+}
+
+int bt_le_whitelist_rem(const bt_addr_le_t *addr)
+{
+	struct bt_hci_cp_le_rem_dev_from_wl *cp;
+	struct net_buf *buf;
+	int err;
+
+	buf = bt_hci_cmd_create(BT_HCI_OP_LE_REM_DEV_FROM_WL, sizeof(*cp));
+	if (!buf) {
+		return -ENOBUFS;
+	}
+
+	cp = net_buf_add(buf, sizeof(*cp));
+	bt_addr_le_copy(&cp->addr, addr);
+
+	err = bt_hci_cmd_send_sync(BT_HCI_OP_LE_REM_DEV_FROM_WL, buf, NULL);
+	if (err) {
+		BT_ERR("Failed to remove device from whitelist");
+		return err;
+	}
+
+	bt_dev.le.wl_entries--;
+	return 0;
+}
+
+int bt_le_whitelist_clear(void)
+{
+	int err = bt_hci_cmd_send_sync(BT_HCI_OP_LE_CLEAR_WL, NULL, NULL);
+
+	if (err) {
+		BT_ERR("Failed to clear whitelist");
+		return err;
+	}
+
+	bt_dev.le.wl_entries = 0;
+	return 0;
+}
+
+int bt_conn_create_auto_le(const struct bt_le_conn_param *param)
+{
+	struct bt_conn *conn;
+	int err;
+
+	if (!atomic_test_bit(bt_dev.flags, BT_DEV_READY)) {
+		return -EINVAL;
+	}
+
+	if (!bt_le_conn_params_valid(param)) {
+		return -EINVAL;
+	}
+
+	if (atomic_test_bit(bt_dev.flags, BT_DEV_EXPLICIT_SCAN)) {
+		return -EINVAL;
+	}
+
+	if (atomic_test_bit(bt_dev.flags, BT_DEV_AUTO_CONN)) {
+		return -EALREADY;
+	}
+
+	if (!bt_dev.le.wl_entries) {
+		return -EINVAL;
+	}
+
+	/* Don't start initiator if we have general discovery procedure. */
+	conn = bt_conn_lookup_state_le(NULL, BT_CONN_CONNECT_SCAN);
+	if (conn) {
+		bt_conn_unref(conn);
+		return -EINVAL;
+	}
+
+	/* Don't start initiator if we have direct discovery procedure. */
+	conn = bt_conn_lookup_state_le(NULL, BT_CONN_CONNECT);
+	if (conn) {
+		bt_conn_unref(conn);
+		return -EINVAL;
+	}
+
+	err = bt_le_auto_conn(param);
+	if (err) {
+		BT_ERR("Failed to start whitelist scan");
+		return err;
+	}
+
+	atomic_set_bit(bt_dev.flags, BT_DEV_AUTO_CONN);
+
+	return 0;
+}
+
+int bt_conn_create_auto_stop(void)
+{
+	if (!atomic_test_bit(bt_dev.flags, BT_DEV_READY)) {
+		return -EINVAL;
+	}
+
+	if (!atomic_test_bit(bt_dev.flags, BT_DEV_AUTO_CONN)) {
+		return -EINVAL;
+	}
+
+	int err = bt_hci_cmd_send_sync(BT_HCI_OP_LE_CREATE_CONN_CANCEL, NULL,
+				       NULL);
+
+	atomic_clear_bit(bt_dev.flags, BT_DEV_AUTO_CONN);
+
+	if (err) {
+		BT_ERR("Failed to stop initiator");
+		return err;
+	}
+
+	return 0;
+}
+#endif /* defined(CONFIG_BT_WHITELIST) */
+
 struct bt_conn *bt_conn_create_le(const bt_addr_le_t *peer,
 				  const struct bt_le_conn_param *param)
 {
 	struct bt_conn *conn;
+	bt_addr_le_t dst;
+
+	if (!atomic_test_bit(bt_dev.flags, BT_DEV_READY)) {
+		return NULL;
+	}
 
 	if (!bt_le_conn_params_valid(param)) {
 		return NULL;
 	}
 
 	if (atomic_test_bit(bt_dev.flags, BT_DEV_EXPLICIT_SCAN)) {
+		return NULL;
+	}
+
+	if (IS_ENABLED(CONFIG_BT_WHITELIST) &&
+	    atomic_test_bit(bt_dev.flags, BT_DEV_AUTO_CONN)) {
 		return NULL;
 	}
 
@@ -1939,16 +2165,21 @@ struct bt_conn *bt_conn_create_le(const bt_addr_le_t *peer,
 		}
 	}
 
-	conn = bt_conn_add_le(peer);
+	if (peer->type == BT_ADDR_LE_PUBLIC_ID ||
+	    peer->type == BT_ADDR_LE_RANDOM_ID) {
+		bt_addr_le_copy(&dst, peer);
+		dst.type -= BT_ADDR_LE_PUBLIC_ID;
+	} else {
+		bt_addr_le_copy(&dst, bt_lookup_id_addr(BT_ID_DEFAULT, peer));
+	}
+
+	conn = bt_conn_add_le(&dst);
 	if (!conn) {
 		return NULL;
 	}
 
 	/* Only default identity supported for now */
 	conn->id = BT_ID_DEFAULT;
-
-	/* Set initial address - will be updated later if necessary. */
-	bt_addr_le_copy(&conn->le.resp_addr, peer);
 
 	bt_conn_set_param_le(conn, param);
 
@@ -1959,6 +2190,7 @@ struct bt_conn *bt_conn_create_le(const bt_addr_le_t *peer,
 	return conn;
 }
 
+#if !defined(CONFIG_BT_WHITELIST)
 int bt_le_set_auto_conn(const bt_addr_le_t *addr,
 			const struct bt_le_conn_param *param)
 {
@@ -2008,6 +2240,7 @@ int bt_le_set_auto_conn(const bt_addr_le_t *addr,
 
 	return 0;
 }
+#endif /* !defined(CONFIG_BT_WHITELIST) */
 #endif /* CONFIG_BT_CENTRAL */
 
 #if defined(CONFIG_BT_PERIPHERAL)
@@ -2022,7 +2255,7 @@ struct bt_conn *bt_conn_create_slave_le(const bt_addr_le_t *peer,
 	param_int.options |= (BT_LE_ADV_OPT_CONNECTABLE |
 			      BT_LE_ADV_OPT_ONE_TIME);
 
-	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, peer);
+	conn = bt_conn_lookup_addr_le(param->id, peer);
 	if (conn) {
 		switch (conn->state) {
 		case BT_CONN_CONNECT_DIR_ADV:
@@ -2034,6 +2267,7 @@ struct bt_conn *bt_conn_create_slave_le(const bt_addr_le_t *peer,
 			if (err && (err != -EALREADY)) {
 				BT_WARN("Directed advertising could not be"
 					" started: %d", err);
+				bt_conn_unref(conn);
 				return NULL;
 			}
 
@@ -2051,6 +2285,7 @@ struct bt_conn *bt_conn_create_slave_le(const bt_addr_le_t *peer,
 		return NULL;
 	}
 
+	conn->id = param->id;
 	bt_conn_set_state(conn, BT_CONN_CONNECT_DIR_ADV);
 
 	err = bt_le_adv_start_internal(&param_int, NULL, 0, NULL, 0, peer);
@@ -2088,7 +2323,8 @@ int bt_conn_le_conn_update(struct bt_conn *conn,
 	return bt_hci_cmd_send(BT_HCI_OP_LE_CONN_UPDATE, buf);
 }
 
-struct net_buf *bt_conn_create_pdu(struct net_buf_pool *pool, size_t reserve)
+struct net_buf *bt_conn_create_pdu_timeout(struct net_buf_pool *pool,
+					   size_t reserve, s32_t timeout)
 {
 	struct net_buf *buf;
 
@@ -2102,8 +2338,30 @@ struct net_buf *bt_conn_create_pdu(struct net_buf_pool *pool, size_t reserve)
 		pool = &acl_tx_pool;
 	}
 
-	buf = net_buf_alloc(pool, K_FOREVER);
-	__ASSERT_NO_MSG(buf);
+	if (IS_ENABLED(CONFIG_BT_DEBUG_CONN) ||
+	    (k_current_get() == &k_sys_work_q.thread && timeout == K_FOREVER)) {
+		buf = net_buf_alloc(pool, K_NO_WAIT);
+		if (!buf) {
+			BT_WARN("Unable to allocate buffer with K_NO_WAIT");
+			/* Cannot block with K_FOREVER on k_sys_work_q as that
+			 * can cause a deadlock when trying to dispatch TX
+			 * notification.
+			 */
+			if (k_current_get() == &k_sys_work_q.thread) {
+				BT_WARN("Unable to allocate buffer: timeout %d",
+					 timeout);
+				return NULL;
+			}
+			buf = net_buf_alloc(pool, timeout);
+		}
+	} else {
+		buf = net_buf_alloc(pool, timeout);
+	}
+
+	if (!buf) {
+		BT_WARN("Unable to allocate buffer: timeout %d", timeout);
+		return NULL;
+	}
 
 	reserve += sizeof(struct bt_hci_acl_hdr) + CONFIG_BT_HCI_RESERVE;
 	net_buf_reserve(buf, reserve);
@@ -2216,7 +2474,7 @@ int bt_conn_auth_cancel(struct bt_conn *conn)
 			return ssp_passkey_neg_reply(conn);
 		case PASSKEY_DISPLAY:
 			return bt_conn_disconnect(conn,
-						  BT_HCI_ERR_AUTHENTICATION_FAIL);
+						  BT_HCI_ERR_AUTH_FAIL);
 		case LEGACY:
 			return pin_code_neg_reply(&conn->br.dst);
 		default:
@@ -2279,7 +2537,7 @@ int bt_conn_init(void)
 	int err, i;
 
 	for (i = 0; i < ARRAY_SIZE(conn_tx); i++) {
-		sys_slist_prepend(&free_tx, &conn_tx[i].node);
+		k_fifo_put(&free_tx, &conn_tx[i]);
 	}
 
 	bt_att_init();

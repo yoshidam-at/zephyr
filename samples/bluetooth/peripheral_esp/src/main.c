@@ -11,8 +11,8 @@
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <misc/printk.h>
-#include <misc/byteorder.h>
+#include <sys/printk.h>
+#include <sys/byteorder.h>
 #include <zephyr.h>
 
 #include <bluetooth/bluetooth.h>
@@ -20,8 +20,7 @@
 #include <bluetooth/conn.h>
 #include <bluetooth/uuid.h>
 #include <bluetooth/gatt.h>
-
-#include <gatt/bas.h>
+#include <bluetooth/services/bas.h>
 
 #define SENSOR_1_NAME				"Temperature Sensor 1"
 #define SENSOR_2_NAME				"Temperature Sensor 2"
@@ -97,7 +96,6 @@ struct temperature_sensor {
 		s16_t ref_val; /* Reference temperature */
 	};
 
-	struct bt_gatt_ccc_cfg  ccc_cfg[BT_GATT_CCC_MAX];
 	struct es_measurement meas;
 };
 
@@ -284,7 +282,7 @@ static void update_temperature(struct bt_conn *conn,
 	}
 }
 
-static struct bt_gatt_attr ess_attrs[] = {
+BT_GATT_SERVICE_DEFINE(ess_svc,
 	BT_GATT_PRIMARY_SERVICE(BT_UUID_ESS),
 
 	/* Temperature Sensor 1 */
@@ -300,7 +298,7 @@ static struct bt_gatt_attr ess_attrs[] = {
 	BT_GATT_DESCRIPTOR(BT_UUID_ES_TRIGGER_SETTING,
 			   BT_GATT_PERM_READ, read_temp_trigger_setting,
 			   NULL, &sensor_1),
-	BT_GATT_CCC(sensor_1.ccc_cfg, temp_ccc_cfg_changed),
+	BT_GATT_CCC(temp_ccc_cfg_changed),
 
 	/* Temperature Sensor 2 */
 	BT_GATT_CHARACTERISTIC(BT_UUID_TEMPERATURE,
@@ -315,7 +313,7 @@ static struct bt_gatt_attr ess_attrs[] = {
 	BT_GATT_DESCRIPTOR(BT_UUID_ES_TRIGGER_SETTING,
 			   BT_GATT_PERM_READ, read_temp_trigger_setting,
 			   NULL, &sensor_2),
-	BT_GATT_CCC(sensor_2.ccc_cfg, temp_ccc_cfg_changed),
+	BT_GATT_CCC(temp_ccc_cfg_changed),
 
 	/* Humidity Sensor */
 	BT_GATT_CHARACTERISTIC(BT_UUID_HUMIDITY, BT_GATT_CHRC_READ,
@@ -324,9 +322,7 @@ static struct bt_gatt_attr ess_attrs[] = {
 	BT_GATT_CUD(SENSOR_3_NAME, BT_GATT_PERM_READ),
 	BT_GATT_DESCRIPTOR(BT_UUID_ES_MEASUREMENT, BT_GATT_PERM_READ,
 			   read_es_measurement, NULL, &sensor_3.meas),
-};
-
-static struct bt_gatt_service ess_svc = BT_GATT_SERVICE(ess_attrs);
+);
 
 static void ess_simulate(void)
 {
@@ -335,12 +331,12 @@ static void ess_simulate(void)
 
 	if (!(i % SENSOR_1_UPDATE_IVAL)) {
 		val = 1200 + i;
-		update_temperature(NULL, &ess_attrs[2], val, &sensor_1);
+		update_temperature(NULL, &ess_svc.attrs[2], val, &sensor_1);
 	}
 
 	if (!(i % SENSOR_2_UPDATE_IVAL)) {
 		val = 1800 + i;
-		update_temperature(NULL, &ess_attrs[9], val, &sensor_2);
+		update_temperature(NULL, &ess_svc.attrs[9], val, &sensor_2);
 	}
 
 	if (!(i % SENSOR_3_UPDATE_IVAL)) {
@@ -364,7 +360,7 @@ static const struct bt_data ad[] = {
 static void connected(struct bt_conn *conn, u8_t err)
 {
 	if (err) {
-		printk("Connection failed (err %u)\n", err);
+		printk("Connection failed (err 0x%02x)\n", err);
 	} else {
 		printk("Connected\n");
 	}
@@ -372,7 +368,7 @@ static void connected(struct bt_conn *conn, u8_t err)
 
 static void disconnected(struct bt_conn *conn, u8_t reason)
 {
-	printk("Disconnected (reason %u)\n", reason);
+	printk("Disconnected (reason 0x%02x)\n", reason);
 }
 
 static struct bt_conn_cb conn_callbacks = {
@@ -388,9 +384,6 @@ static void bt_ready(int err)
 	}
 
 	printk("Bluetooth initialized\n");
-
-	bt_gatt_service_register(&ess_svc);
-	bas_init();
 
 	err = bt_le_adv_start(BT_LE_ADV_CONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);
 	if (err) {
@@ -424,6 +417,19 @@ static struct bt_conn_auth_cb auth_cb_display = {
 	.passkey_entry = NULL,
 	.cancel = auth_cancel,
 };
+
+static void bas_notify(void)
+{
+	u8_t battery_level = bt_gatt_bas_get_battery_level();
+
+	battery_level--;
+
+	if (!battery_level) {
+		battery_level = 100U;
+	}
+
+	bt_gatt_bas_set_battery_level(battery_level);
+}
 
 void main(void)
 {

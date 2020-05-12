@@ -20,3 +20,5 @@ supported:
   - pwm
   - rtc
   - watchdog
+  - counter
+  - nvs

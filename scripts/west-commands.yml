@@ -1,10 +1,25 @@
 # Keep the help strings in sync with the values in the .py files!
 west-commands:
+  - file: scripts/west_commands/completion.py
+    commands:
+      - name: completion
+        class: Completion
+        help: display shell completion scripts
+  - file: scripts/west_commands/boards.py
+    commands:
+      - name: boards
+        class: Boards
+        help: display information about supported boards
   - file: scripts/west_commands/build.py
     commands:
       - name: build
         class: Build
         help: compile a Zephyr application
+  - file: scripts/west_commands/sign.py
+    commands:
+      - name: sign
+        class: Sign
+        help: sign a Zephyr binary for bootloader chain-loading
   - file: scripts/west_commands/flash.py
     commands:
       - name: flash

@@ -18,6 +18,10 @@
 #include <arch/cpu.h>
 #include <cortex_m/exc.h>
 
+#include <logging/log.h>
+
+LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
+
 #ifdef CONFIG_CMU_HFCLK_HFXO
 /**
  * @brief Initialization parameters for the external high frequency oscillator
@@ -114,8 +118,6 @@ static int silabs_exx32_init(struct device *arg)
 
 	/* handle chip errata */
 	CHIP_Init();
-
-	_ClearFaults();
 
 #ifdef CONFIG_SOC_GECKO_EMU_DCDC
 	dcdc_init();

@@ -16,9 +16,6 @@
 #include <kernel_structs.h>
 #include <offsets_short.h>
 #include <wait_q.h>
-#ifdef CONFIG_INIT_STACKS
-#include <string.h>
-#endif /* CONFIG_INIT_STACKS */
 
 #ifdef CONFIG_USERSPACE
 #include <arch/arc/v2/mpu/arc_core_mpu.h>
@@ -46,7 +43,7 @@ struct init_stack_frame {
  * needed anymore.
  *
  * The initial context is a basic stack frame that contains arguments for
- * _thread_entry() return address, that points at _thread_entry()
+ * z_thread_entry() return address, that points at z_thread_entry()
  * and status register.
  *
  * <options> is currently unused.
@@ -62,43 +59,53 @@ struct init_stack_frame {
  *
  * @return N/A
  */
-void _new_thread(struct k_thread *thread, k_thread_stack_t *stack,
+void z_new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 		 size_t stackSize, k_thread_entry_t pEntry,
 		 void *parameter1, void *parameter2, void *parameter3,
 		 int priority, unsigned int options)
 {
-	char *pStackMem = K_THREAD_STACK_BUFFER(stack);
-	_ASSERT_VALID_PRIO(priority, pEntry);
+	char *pStackMem = Z_THREAD_STACK_BUFFER(stack);
+	Z_ASSERT_VALID_PRIO(priority, pEntry);
 
 	char *stackEnd;
 	char *stackAdjEnd;
 	struct init_stack_frame *pInitCtx;
 
-#if CONFIG_USERSPACE
+#ifdef CONFIG_USERSPACE
+
+	size_t stackAdjSize;
+	size_t offset = 0;
+
 /* adjust stack and stack size */
 #if CONFIG_ARC_MPU_VER == 2
-	stackSize = POW2_CEIL(STACK_SIZE_ALIGN(stackSize));
+	stackAdjSize = Z_ARC_MPUV2_SIZE_ALIGN(stackSize);
 #elif CONFIG_ARC_MPU_VER == 3
-	stackSize = ROUND_UP(stackSize, STACK_ALIGN);
+	stackAdjSize = STACK_SIZE_ALIGN(stackSize);
 #endif
-	stackEnd = pStackMem + stackSize;
+	stackEnd = pStackMem + stackAdjSize;
+
+#ifdef CONFIG_STACK_POINTER_RANDOM
+	offset = stackAdjSize - stackSize;
+#endif
 
 	if (options & K_USER) {
 		thread->arch.priv_stack_start =
 			(u32_t)(stackEnd + STACK_GUARD_SIZE);
 
-		stackAdjEnd = (char *)STACK_ROUND_DOWN(stackEnd + STACK_GUARD_SIZE +
-					CONFIG_PRIVILEGED_STACK_SIZE);
+		stackAdjEnd = (char *)STACK_ROUND_DOWN(stackEnd +
+				Z_ARCH_THREAD_STACK_RESERVED);
 
 		/* reserve 4 bytes for the start of user sp */
 		stackAdjEnd -= 4;
-		(*(u32_t *)stackAdjEnd) = (u32_t)stackEnd;
+		(*(u32_t *)stackAdjEnd) = STACK_ROUND_DOWN(
+			(u32_t)stackEnd - offset);
 
 #ifdef CONFIG_THREAD_USERSPACE_LOCAL_DATA
 		/* reserve stack space for the userspace local data struct */
 		thread->userspace_local_data =
 			(struct _thread_userspace_local_data *)
-			STACK_ROUND_DOWN(stackEnd - sizeof(*thread->userspace_local_data));
+			STACK_ROUND_DOWN(stackEnd -
+			sizeof(*thread->userspace_local_data) - offset);
 		/* update the start of user sp */
 		(*(u32_t *)stackAdjEnd) = (u32_t) thread->userspace_local_data;
 #endif
@@ -115,24 +122,23 @@ void _new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 	 * ---------------------------------------------
 	 */
 		pStackMem += STACK_GUARD_SIZE;
-		stackSize = stackSize + CONFIG_PRIVILEGED_STACK_SIZE;
-		stackEnd += CONFIG_PRIVILEGED_STACK_SIZE + STACK_GUARD_SIZE;
+		stackAdjSize = stackAdjSize + CONFIG_PRIVILEGED_STACK_SIZE;
+		stackEnd += Z_ARCH_THREAD_STACK_RESERVED;
 
 		thread->arch.priv_stack_start = 0;
 
 #ifdef CONFIG_THREAD_USERSPACE_LOCAL_DATA
 		/* reserve stack space for the userspace local data struct */
 		stackAdjEnd = (char *)STACK_ROUND_DOWN(stackEnd
-			- sizeof(*thread->userspace_local_data));
+			- sizeof(*thread->userspace_local_data) - offset);
 		thread->userspace_local_data =
 			(struct _thread_userspace_local_data *)stackAdjEnd;
 #else
-		stackAdjEnd = (char *)STACK_ROUND_DOWN(stackEnd);
+		stackAdjEnd = (char *)STACK_ROUND_DOWN(stackEnd - offset);
 #endif
 	}
 
-	_new_thread_init(thread, pStackMem, stackSize, priority, options);
-
+	z_new_thread_init(thread, pStackMem, stackAdjSize, priority, options);
 
 	/* carve the thread entry struct from the "base" of
 		the privileged stack */
@@ -142,9 +148,9 @@ void _new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 	/* fill init context */
 	pInitCtx->status32 = 0U;
 	if (options & K_USER) {
-		pInitCtx->pc = ((u32_t)_user_thread_entry_wrapper);
+		pInitCtx->pc = ((u32_t)z_user_thread_entry_wrapper);
 	} else {
-		pInitCtx->pc = ((u32_t)_thread_entry_wrapper);
+		pInitCtx->pc = ((u32_t)z_thread_entry_wrapper);
 	}
 
 	/*
@@ -156,9 +162,10 @@ void _new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 	 */
 	pInitCtx->status32 |= _ARC_V2_STATUS32_US;
 #else /* For no USERSPACE feature */
+	pStackMem += Z_ARCH_THREAD_STACK_RESERVED;
 	stackEnd = pStackMem + stackSize;
 
-	_new_thread_init(thread, pStackMem, stackSize, priority, options);
+	z_new_thread_init(thread, pStackMem, stackSize, priority, options);
 
 	stackAdjEnd = stackEnd;
 
@@ -167,11 +174,11 @@ void _new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 		sizeof(struct init_stack_frame));
 
 	pInitCtx->status32 = 0U;
-	pInitCtx->pc = ((u32_t)_thread_entry_wrapper);
+	pInitCtx->pc = ((u32_t)z_thread_entry_wrapper);
 #endif
 
-#ifdef CONFIG_ARC_HAS_SECURE
-	pInitCtx->sec_stat = _arc_v2_aux_reg_read(_ARC_V2_SEC_STAT);
+#ifdef CONFIG_ARC_SECURE_FIRMWARE
+	pInitCtx->sec_stat = z_arc_v2_aux_reg_read(_ARC_V2_SEC_STAT);
 #endif
 
 	pInitCtx->r0 = (u32_t)pEntry;
@@ -181,7 +188,7 @@ void _new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 
 /* stack check configuration */
 #ifdef CONFIG_ARC_STACK_CHECKING
-#ifdef CONFIG_ARC_HAS_SECURE
+#ifdef CONFIG_ARC_SECURE_FIRMWARE
 	pInitCtx->sec_stat |= _ARC_V2_SEC_STAT_SSC;
 #else
 	pInitCtx->status32 |= _ARC_V2_STATUS32_SC;
@@ -193,7 +200,7 @@ void _new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 		thread->arch.k_stack_top =
 			 (u32_t)(stackEnd + STACK_GUARD_SIZE);
 		thread->arch.k_stack_base = (u32_t)
-		(stackEnd + STACK_GUARD_SIZE + CONFIG_PRIVILEGED_STACK_SIZE);
+		(stackEnd + Z_ARCH_THREAD_STACK_RESERVED);
 	} else {
 		thread->arch.k_stack_top = (u32_t)pStackMem;
 		thread->arch.k_stack_base = (u32_t)stackEnd;
@@ -205,17 +212,12 @@ void _new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 	thread->arch.k_stack_base = (u32_t) stackEnd;
 #endif
 #endif
-	/*
-	 * seti instruction in the end of the _Swap() will
-	 * enable the interrupts based on intlock_key
-	 * value.
-	 *
-	 * intlock_key is constructed based on ARCv2 ISA Programmer's
-	 * Reference Manual CLRI instruction description:
-	 * dst[31:6] dst[5] dst[4]       dst[3:0]
-	 *    26'd0    1    STATUS32.IE  STATUS32.E[3:0]
-	 */
-	thread->arch.intlock_key = 0x30 | (_ARC_V2_DEF_IRQ_LEVEL & 0xf);
+
+#ifdef CONFIG_ARC_USE_UNALIGNED_MEM_ACCESS
+	pInitCtx->status32 |= _ARC_V2_STATUS32_AD;
+#endif
+
+	thread->switch_handle = thread;
 	thread->arch.relinquish_cause = _CAUSE_COOP;
 	thread->callee_saved.sp =
 		(u32_t)pInitCtx - ___callee_saved_stack_t_SIZEOF;
@@ -226,7 +228,7 @@ void _new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 
 #ifdef CONFIG_USERSPACE
 
-FUNC_NORETURN void _arch_user_mode_enter(k_thread_entry_t user_entry,
+FUNC_NORETURN void z_arch_user_mode_enter(k_thread_entry_t user_entry,
 	void *p1, void *p2, void *p3)
 {
 
@@ -260,10 +262,45 @@ FUNC_NORETURN void _arch_user_mode_enter(k_thread_entry_t user_entry,
 	/* need to lock cpu here ? */
 	configure_mpu_thread(_current);
 
-	_arc_userspace_enter(user_entry, p1, p2, p3,
+	z_arc_userspace_enter(user_entry, p1, p2, p3,
 			     (u32_t)_current->stack_obj,
 			     _current->stack_info.size);
 	CODE_UNREACHABLE;
 }
 
 #endif
+
+#if defined(CONFIG_FLOAT) && defined(CONFIG_FP_SHARING)
+int z_arch_float_disable(struct k_thread *thread)
+{
+	unsigned int key;
+
+	/* Ensure a preemptive context switch does not occur */
+
+	key = irq_lock();
+
+	/* Disable all floating point capabilities for the thread */
+	thread->base.user_options &= ~K_FP_REGS;
+
+	irq_unlock(key);
+
+	return 0;
+}
+
+
+int z_arch_float_enable(struct k_thread *thread)
+{
+	unsigned int key;
+
+	/* Ensure a preemptive context switch does not occur */
+
+	key = irq_lock();
+
+	/* Enable all floating point capabilities for the thread */
+	thread->base.user_options |= K_FP_REGS;
+
+	irq_unlock(key);
+
+	return 0;
+}
+#endif /* CONFIG_FLOAT && CONFIG_FP_SHARING */

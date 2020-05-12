@@ -1,55 +1,43 @@
 /*
  * Copyright (c) 2016-2017 Nordic Semiconductor ASA
  * Copyright (c) 2018 Intel Corporation
- * Copyright (c) 2019 Peter Bigot Consulting, LLC
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <soc.h>
-#include <clock_control.h>
+#include <drivers/clock_control.h>
 #include <drivers/clock_control/nrf_clock_control.h>
-#include <system_timer.h>
+#include <drivers/timer/system_timer.h>
 #include <sys_clock.h>
 #include <nrf_rtc.h>
 #include <spinlock.h>
 
 #define RTC NRF_RTC1
 
-/*
- * Compare values must be set to at least 2 greater than the current
- * counter value to ensure that the compare fires.  Compare values are
- * generally determined by reading the counter, then performing some
- * calculations to convert a relative delay to an absolute delay.
- * Assume that the counter will not increment more than twice during
- * these calculations, allowing for a final check that can replace a
- * too-low compare with a value that will guarantee fire.
- */
-#define MIN_DELAY 4
-
-#define CYC_PER_TICK (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC	\
+#define COUNTER_SPAN BIT(24)
+#define COUNTER_MAX (COUNTER_SPAN - 1U)
+#define COUNTER_HALF_SPAN (COUNTER_SPAN / 2U)
+#define CYC_PER_TICK (sys_clock_hw_cycles_per_sec()	\
 		      / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
-#if CYC_PER_TICK < MIN_DELAY
-#error Cycles per tick is too small
-#endif
+#define MAX_TICKS ((COUNTER_MAX - CYC_PER_TICK) / CYC_PER_TICK)
+#define MAX_CYCLES (MAX_TICKS * CYC_PER_TICK)
 
-#define COUNTER_MAX 0x00ffffffU
-#define MAX_TICKS ((COUNTER_MAX - MIN_DELAY) / CYC_PER_TICK)
-#define MAX_DELAY (MAX_TICKS * CYC_PER_TICK)
+static struct k_spinlock lock;
 
 static u32_t last_count;
 
-static inline u32_t counter_sub(u32_t a, u32_t b)
+static u32_t counter_sub(u32_t a, u32_t b)
 {
 	return (a - b) & COUNTER_MAX;
 }
 
-static inline void set_comparator(u32_t cyc)
+static void set_comparator(u32_t cyc)
 {
-	nrf_rtc_cc_set(RTC, 0, cyc);
+	nrf_rtc_cc_set(RTC, 0, cyc & COUNTER_MAX);
 }
 
-static inline u32_t counter(void)
+static u32_t counter(void)
 {
 	return nrf_rtc_counter_get(RTC);
 }
@@ -67,7 +55,7 @@ void rtc1_nrf_isr(void *arg)
 	ARG_UNUSED(arg);
 	RTC->EVENTS_COMPARE[0] = 0;
 
-	u32_t key = irq_lock();
+	k_spinlock_key_t key = k_spin_lock(&lock);
 	u32_t t = counter();
 	u32_t dticks = counter_sub(t, last_count) / CYC_PER_TICK;
 
@@ -76,14 +64,17 @@ void rtc1_nrf_isr(void *arg)
 	if (!IS_ENABLED(CONFIG_TICKLESS_KERNEL)) {
 		u32_t next = last_count + CYC_PER_TICK;
 
-		if (counter_sub(next, t) < MIN_DELAY) {
+		/* As below: we're guaranteed to get an interrupt as
+		 * long as it's set two or more cycles in the future
+		 */
+		if (counter_sub(next, t) < 3) {
 			next += CYC_PER_TICK;
 		}
 		set_comparator(next);
 	}
 
-	irq_unlock(key);
-	z_clock_announce(dticks);
+	k_spin_unlock(&lock, key);
+	z_clock_announce(IS_ENABLED(CONFIG_TICKLESS_KERNEL) ? dticks : 1);
 }
 
 int z_clock_driver_init(struct device *device)
@@ -92,7 +83,7 @@ int z_clock_driver_init(struct device *device)
 
 	ARG_UNUSED(device);
 
-	clock = device_get_binding(CONFIG_CLOCK_CONTROL_NRF_K32SRC_DRV_NAME);
+	clock = device_get_binding(DT_INST_0_NORDIC_NRF_CLOCK_LABEL "_32K");
 	if (!clock) {
 		return -1;
 	}
@@ -102,7 +93,6 @@ int z_clock_driver_init(struct device *device)
 	/* TODO: replace with counter driver to access RTC */
 	nrf_rtc_prescaler_set(RTC, 0);
 	nrf_rtc_cc_set(RTC, 0, CYC_PER_TICK);
-	nrf_rtc_event_enable(RTC, RTC_EVTENSET_COMPARE0_Msk);
 	nrf_rtc_int_enable(RTC, RTC_INTENSET_COMPARE0_Msk);
 
 	/* Clear the event flag and possible pending interrupt */
@@ -128,56 +118,105 @@ void z_clock_set_timeout(s32_t ticks, bool idle)
 
 #ifdef CONFIG_TICKLESS_KERNEL
 	ticks = (ticks == K_FOREVER) ? MAX_TICKS : ticks;
-	ticks = max(min(ticks - 1, (s32_t)MAX_TICKS), 0);
+	ticks = MAX(MIN(ticks - 1, (s32_t)MAX_TICKS), 0);
 
-	/*
-	 * Get the requested delay in tick-aligned cycles.  Increase
-	 * by one tick to round up so we don't timeout early due to
-	 * cycles elapsed since the last tick.  Cap at the maximum
-	 * tick-aligned delta.
+	k_spinlock_key_t key = k_spin_lock(&lock);
+	u32_t cyc, dt, t = counter();
+	u32_t unannounced = counter_sub(t, last_count);
+	bool zli_fixup = IS_ENABLED(CONFIG_ZERO_LATENCY_IRQS);
+
+	/* If we haven't announced for more than half the 24-bit wrap
+	 * duration, then force an announce to avoid loss of a wrap
+	 * event.  This can happen if new timeouts keep being set
+	 * before the existing one triggers the interrupt.
 	 */
-	u32_t cyc = min((1 + ticks) * CYC_PER_TICK, MAX_DELAY);
+	if (unannounced >= COUNTER_HALF_SPAN) {
+		ticks = 0;
+	}
 
-	u32_t key = irq_lock();
-	u32_t d = counter_sub(counter(), last_count);
-
-	/*
-	 * We've already accounted for anything less than a full tick,
-	 * and assumed we meet the minimum delay for the tick.  If
-	 * that's not true, we have to adjust, which may involve a
-	 * rare and expensive integer division.
+	/* Get the cycles from last_count to the tick boundary after
+	 * the requested ticks have passed starting now.
 	 */
-	if (d > (CYC_PER_TICK - MIN_DELAY)) {
-		if (d >= CYC_PER_TICK) {
-			/*
-			 * We're late by at least one tick.  Adjust
-			 * the compare offset for the missed ones, and
-			 * reduce d to be the portion since the last
-			 * (unseen) tick.
-			 */
-			u32_t missed_ticks = d / CYC_PER_TICK;
-			u32_t missed_cycles = missed_ticks * CYC_PER_TICK;
-			cyc += missed_cycles;
-			d -= missed_cycles;
+	cyc = ticks * CYC_PER_TICK + 1 + unannounced;
+	cyc += (CYC_PER_TICK - 1);
+	cyc = (cyc / CYC_PER_TICK) * CYC_PER_TICK;
+
+	/* Due to elapsed time the calculation above might produce a
+	 * duration that laps the counter.  Don't let it.
+	 */
+	if (cyc > MAX_CYCLES) {
+		cyc = MAX_CYCLES;
+	}
+
+	cyc += last_count;
+
+	/* Per NRF docs, the RTC is guaranteed to trigger a compare
+	 * event if the comparator value to be set is at least two
+	 * cycles later than the current value of the counter.  So if
+	 * we're three or more cycles out, we can set it blindly.  If
+	 * not, check the time again immediately after setting: it's
+	 * possible we "just missed it" and can flag an immediate
+	 * interrupt.  Or it could be exactly two cycles out, which
+	 * will have worked.  Otherwise, there's no way to get an
+	 * interrupt at the right time and we have to slip the event
+	 * by one clock cycle (or we could spin, but this is a slow
+	 * clock and spinning for a whole cycle can be thousands of
+	 * instructions!)
+	 *
+	 * You might ask: why not set the comparator first and then
+	 * check the timer synchronously to see if we missed it, which
+	 * would avoid the need for a slipped cycle.  That doesn't
+	 * work, the states overlap inside the counter hardware.  It's
+	 * possible to set a comparator value of "N", issue a DSB
+	 * instruction to flush the pipeline, and then immediately
+	 * read a counter value of "N-1" (i.e. the comparator is still
+	 * in the future), and yet still not receive an interrupt at
+	 * least on nRF52.  Some experimentation on nrf52840 shows
+	 * that you need to be early by about 400 processor cycles
+	 * (about 1/5th of a RTC cycle) in order to reliably get the
+	 * interrupt.  The docs say two cycles, they mean two cycles.
+	 */
+	if (counter_sub(cyc, t) > 2) {
+		set_comparator(cyc);
+	} else {
+		set_comparator(cyc);
+		dt = counter_sub(cyc, counter());
+		if (dt == 0 || dt > 0x7fffff) {
+			/* Missed it! */
+			NVIC_SetPendingIRQ(RTC1_IRQn);
+			if (IS_ENABLED(CONFIG_ZERO_LATENCY_IRQS)) {
+				zli_fixup = false;
+			}
+		} else if (dt == 1) {
+			/* Too soon, interrupt won't arrive. */
+			set_comparator(cyc + 2);
 		}
-		if (d > (CYC_PER_TICK - MIN_DELAY)) {
-			/*
-			 * We're (now) within the tick, but too close
-			 * to meet the minimum delay required to
-			 * guarantee compare firing.  Step up to the
-			 * next tick.
-			 */
-			cyc += CYC_PER_TICK;
-		}
-		if (cyc > MAX_DELAY) {
-			/* Don't adjust beyond the counter range. */
-			cyc = MAX_DELAY;
+		/* Otherwise it was two cycles out, we're fine */
+	}
+
+#ifdef CONFIG_ZERO_LATENCY_IRQS
+	/* Failsafe.  ZLIs can preempt us even though interrupts are
+	 * masked, blowing up the sensitive timing above.  If the
+	 * feature is enabled and we haven't recorded the presence of
+	 * a pending interrupt then we need a final check (in a loop!
+	 * because this too can be interrupted) to confirm that the
+	 * comparator is still in the future.  Don't bother being
+	 * fancy with cycle counting here, just set an interrupt
+	 * "soon" that we know will get the timer back to a known
+	 * state.  This handles (via some hairy modular expressions)
+	 * the wraparound cases where we are preempted for as much as
+	 * half the counter space.
+	 */
+	if (zli_fixup && counter_sub(cyc, counter()) <= 0x7fffff) {
+		while (counter_sub(cyc, counter() + 2) > 0x7fffff) {
+			cyc = counter() + 3;
+			set_comparator(cyc);
 		}
 	}
-	set_comparator(last_count + cyc);
-
-	irq_unlock(key);
 #endif
+
+	k_spin_unlock(&lock, key);
+#endif /* CONFIG_TICKLESS_KERNEL */
 }
 
 u32_t z_clock_elapsed(void)
@@ -186,18 +225,18 @@ u32_t z_clock_elapsed(void)
 		return 0;
 	}
 
-	u32_t key = irq_lock();
+	k_spinlock_key_t key = k_spin_lock(&lock);
 	u32_t ret = counter_sub(counter(), last_count) / CYC_PER_TICK;
 
-	irq_unlock(key);
+	k_spin_unlock(&lock, key);
 	return ret;
 }
 
-u32_t _timer_cycle_get_32(void)
+u32_t z_timer_cycle_get_32(void)
 {
-	u32_t key = irq_lock();
+	k_spinlock_key_t key = k_spin_lock(&lock);
 	u32_t ret = counter_sub(counter(), last_count) + last_count;
 
-	irq_unlock(key);
+	k_spin_unlock(&lock, key);
 	return ret;
 }

@@ -5,10 +5,10 @@
  */
 
 #include <device.h>
-#include <gpio.h>
-#include <misc/byteorder.h>
-#include <misc/util.h>
-#include <sensor.h>
+#include <drivers/gpio.h>
+#include <sys/byteorder.h>
+#include <sys/util.h>
+#include <drivers/sensor.h>
 #include <string.h>
 #include <zephyr.h>
 #include <logging/log.h>
@@ -138,7 +138,7 @@ static int dht_sample_fetch(struct device *dev, enum sensor_channel chan)
 			buf[j] = buf[j] << 1;
 		}
 
-		if (i % 8 == 7) {
+		if (i % 8 == 7U) {
 			j++;
 		}
 	}

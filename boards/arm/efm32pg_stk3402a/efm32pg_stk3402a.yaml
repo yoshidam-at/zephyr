@@ -7,11 +7,12 @@ flash: 1024
 toolchain:
   - zephyr
   - gccarmemb
+  - xtools
 supported:
   - i2c
   - gpio
+  - nvs
 testing:
   ignore_tags:
-  - xtools
     - net
     - bluetooth

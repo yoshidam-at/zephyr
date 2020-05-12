@@ -6,16 +6,19 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+# NOTE: This file is part of the old device tree scripts, which will be removed
+# later. They are kept to generate some legacy #defines via the
+# --deprecated-only flag.
+#
+# The new scripts are gen_defines.py, edtlib.py, and dtlib.py.
+
 # vim: ai:ts=4:sw=4
 
-import sys
-from os import listdir
 import os, fnmatch
 import re
 import yaml
 import argparse
-from collections.abc import Mapping
-from copy import deepcopy
+from collections import defaultdict
 
 from devicetree import parse_file
 from extract.globals import *
@@ -26,515 +29,432 @@ from extract.compatible import compatible
 from extract.interrupts import interrupts
 from extract.reg import reg
 from extract.flash import flash
-from extract.pinctrl import pinctrl
 from extract.default import default
 
-class Bindings(yaml.Loader):
 
-    ##
-    # List of all yaml files available for yaml loaders
-    # of this class. Must be preset before the first
-    # load operation.
-    _files = []
-
-    ##
-    # Files that are already included.
-    # Must be reset on the load of every new binding
-    _included = []
-
-    @classmethod
-    def bindings(cls, compatibles, yaml_dirs):
-        # find unique set of compatibles across all active nodes
-        s = set()
-        for k, v in compatibles.items():
-            if isinstance(v, list):
-                for item in v:
-                    s.add(item)
-            else:
-                s.add(v)
-
-        # scan YAML files and find the ones we are interested in
-        cls._files = []
-        for yaml_dir in yaml_dirs:
-            for root, dirnames, filenames in os.walk(yaml_dir):
-                for filename in fnmatch.filter(filenames, '*.yaml'):
-                    cls._files.append(os.path.join(root, filename))
-
-        yaml_list = {}
-        yaml_list['node'] = {}
-        yaml_list['bus'] = {}
-        yaml_list['compat'] = []
-        file_load_list = set()
-        for file in cls._files:
-            for line in open(file, 'r', encoding='utf-8'):
-                if re.search('^\s+constraint:*', line):
-                    c = line.split(':')[1].strip()
-                    c = c.strip('"')
-                    if c in s:
-                        if file not in file_load_list:
-                            file_load_list.add(file)
-                            with open(file, 'r', encoding='utf-8') as yf:
-                                cls._included = []
-                                l = yaml_traverse_inherited(file, yaml.load(yf, cls))
-                                if c not in yaml_list['compat']:
-                                    yaml_list['compat'].append(c)
-                                if 'parent' in l:
-                                    bus = l['parent']['bus']
-                                    if not bus in yaml_list['bus']:
-                                        yaml_list['bus'][bus] = {}
-                                    yaml_list['bus'][bus][c] = l
-                                else:
-                                    yaml_list['node'][c] = l
-        return (yaml_list['node'], yaml_list['bus'], yaml_list['compat'])
-
-    def __init__(self, stream):
-        filepath = os.path.realpath(stream.name)
-        if filepath in self._included:
-            print("Error:: circular inclusion for file name '{}'".
-                  format(stream.name))
-            raise yaml.constructor.ConstructorError
-        self._included.append(filepath)
-        super(Bindings, self).__init__(stream)
-        Bindings.add_constructor('!include', Bindings._include)
-        Bindings.add_constructor('!import',  Bindings._include)
-
-    def _include(self, node):
-        if isinstance(node, yaml.ScalarNode):
-            return self._extract_file(self.construct_scalar(node))
-
-        elif isinstance(node, yaml.SequenceNode):
-            result = []
-            for filename in self.construct_sequence(node):
-                result.append(self._extract_file(filename))
-            return result
-
-        elif isinstance(node, yaml.MappingNode):
-            result = {}
-            for k, v in self.construct_mapping(node).iteritems():
-                result[k] = self._extract_file(v)
-            return result
-
-        else:
-            print("Error:: unrecognised node type in !include statement")
-            raise yaml.constructor.ConstructorError
-
-    def _extract_file(self, filename):
-        filepaths = [filepath for filepath in self._files if filepath.endswith(filename)]
-        if len(filepaths) == 0:
-            print("Error:: unknown file name '{}' in !include statement".
-                  format(filename))
-            raise yaml.constructor.ConstructorError
-        elif len(filepaths) > 1:
-            # multiple candidates for filename
-            files = []
-            for filepath in filepaths:
-                if os.path.basename(filename) == os.path.basename(filepath):
-                    files.append(filepath)
-            if len(files) > 1:
-                print("Error:: multiple candidates for file name '{}' in !include statement".
-                      format(filename), filepaths)
-                raise yaml.constructor.ConstructorError
-            filepaths = files
-        with open(filepaths[0], 'r', encoding='utf-8') as f:
-            return yaml.load(f, Bindings)
-
-def extract_single(node_address, prop, key, def_label):
-
-    prop_def = {}
+def extract_bus_name(node_path, def_label):
+    label = def_label + '_BUS_NAME'
     prop_alias = {}
 
-    if isinstance(prop, list):
-        for i, p in enumerate(prop):
-            k = convert_string_to_label(key)
-            label = def_label + '_' + k
-            if isinstance(p, str):
-                p = "\"" + p + "\""
-            add_compat_alias(node_address,
-                    k + '_' + str(i),
-                    label + '_' + str(i),
-                    prop_alias)
-            prop_def[label + '_' + str(i)] = p
-    else:
-        k = convert_string_to_label(key)
-        label = def_label + '_' + k
+    add_compat_alias(node_path, 'BUS_NAME', label, prop_alias)
 
-        if prop == 'parent-label':
-            prop = find_parent_prop(node_address, 'label')
+    # Generate defines for node aliases
+    if node_path in aliases:
+        add_prop_aliases(
+            node_path,
+            lambda alias: str_to_label(alias) + '_BUS_NAME',
+            label,
+            prop_alias)
 
-        if isinstance(prop, str):
-            prop = "\"" + prop + "\""
-        add_compat_alias(node_address, k, label, prop_alias)
-        prop_def[label] = prop
-
-        # generate defs for node aliases
-        if node_address in aliases:
-            add_prop_aliases(
-                node_address,
-                lambda alias:
-                    convert_string_to_label(alias) + '_' + k,
-                label,
+    insert_defs(node_path,
+                {label: '"' + find_parent_prop(node_path, 'label') + '"'},
                 prop_alias)
 
-    insert_defs(node_address, prop_def, prop_alias)
 
-def extract_string_prop(node_address, key, label):
+def extract_string_prop(node_path, key, label):
+    if node_path not in defs:
+        # Make all defs have the special 'aliases' key, to remove existence
+        # checks elsewhere
+        defs[node_path] = {'aliases': {}}
 
-    prop_def = {}
+    defs[node_path][label] = '"' + reduced[node_path]['props'][key] + '"'
 
-    node = reduced[node_address]
-    prop = node['props'][key]
 
-    k = convert_string_to_label(key)
-    prop_def[label] = "\"" + prop + "\""
+def generate_prop_defines(node_path, prop):
+    # Generates #defines (and .conf file values) from the prop
+    # named 'prop' on the device tree node at 'node_path'
 
-    if node_address in defs:
-        defs[node_address].update(prop_def)
+    binding = get_binding(node_path)
+    if 'parent' in binding and 'bus' in binding['parent']:
+        # If the binding specifies a parent for the node, then include the
+        # parent in the #define's generated for the properties
+        parent_path = get_parent_path(node_path)
+        def_label = 'DT_' + node_label(parent_path) + '_' \
+                          + node_label(node_path)
     else:
-        defs[node_address] = prop_def
+        def_label = 'DT_' + node_label(node_path)
 
-
-def extract_property(node_compat, node_address, prop, prop_val, names):
-
-    node = reduced[node_address]
-    yaml_node_compat = get_binding(node_address)
-    if 'base_label' in yaml_node_compat:
-        def_label = yaml_node_compat.get('base_label')
-    else:
-        def_label = get_node_label(node_address)
-
-    if 'parent' in yaml_node_compat:
-        if 'bus' in yaml_node_compat['parent']:
-            # get parent label
-            parent_address = get_parent_address(node_address)
-
-            #check parent has matching child bus value
-            try:
-                parent_yaml = get_binding(parent_address)
-                parent_bus = parent_yaml['child']['bus']
-            except (KeyError, TypeError) as e:
-                raise Exception(str(node_address) + " defines parent " +
-                        str(parent_address) + " as bus master but " +
-                        str(parent_address) + " not configured as bus master " +
-                        "in yaml description")
-
-            if parent_bus != yaml_node_compat['parent']['bus']:
-                bus_value = yaml_node_compat['parent']['bus']
-                raise Exception(str(node_address) + " defines parent " +
-                        str(parent_address) + " as " + bus_value +
-                        " bus master but " + str(parent_address) +
-                        " configured as " + str(parent_bus) +
-                        " bus master")
-
-            # Generate alias definition if parent has any alias
-            if parent_address in aliases:
-                for i in aliases[parent_address]:
-                    # Build an alias name that respects device tree specs
-                    node_name = node_compat + '-' + node_address.split('@')[-1]
-                    node_strip = node_name.replace('@','-').replace(',','-')
-                    node_alias = i + '-' + node_strip
-                    if node_alias not in aliases[node_address]:
-                        # Need to generate alias name for this node:
-                        aliases[node_address].append(node_alias)
-
-            # Use parent label to generate label
-            parent_label = get_node_label(parent_address)
-            def_label = parent_label + '_' + def_label
-
-            # Generate bus-name define
-            extract_single(node_address, 'parent-label',
-                           'bus-name', 'DT_' + def_label)
-
-    if 'base_label' not in yaml_node_compat:
-        def_label = 'DT_' + def_label
+    names = prop_names(reduced[node_path], prop)
 
     if prop == 'reg':
-        reg.extract(node_address, names, def_label, 1)
+        reg.extract(node_path, names, def_label, 1)
     elif prop == 'interrupts' or prop == 'interrupts-extended':
-        interrupts.extract(node_address, prop, names, def_label)
+        interrupts.extract(node_path, prop, names, def_label)
     elif prop == 'compatible':
-        compatible.extract(node_address, prop, def_label)
-    elif 'pinctrl-' in prop:
-        pinctrl.extract(node_address, prop, def_label)
+        compatible.extract(node_path, prop, def_label)
     elif 'clocks' in prop:
-        clocks.extract(node_address, prop, def_label)
-    elif 'pwms' in prop or 'gpios' in prop:
-        # drop the 's' from the prop
-        generic = prop[:-1]
-        try:
-            prop_values = list(reduced[node_address]['props'].get(prop))
-        except:
-            prop_values = reduced[node_address]['props'].get(prop)
+        clocks.extract(node_path, prop, def_label)
+    elif 'pwms' in prop or '-gpios' in prop or prop == "gpios":
+        prop_values = reduced[node_path]['props'][prop]
+        generic = prop[:-1]  # Drop the 's' from the prop
 
-        extract_controller(node_address, prop, prop_values, 0,
-                           def_label, generic)
-        extract_cells(node_address, prop, prop_values,
-                      names, 0, def_label, generic)
+        # Deprecated the non-'S' form
+        extract_controller(node_path, prop, prop_values, 0,
+                           def_label, generic, deprecate=True)
+        extract_controller(node_path, prop, prop_values, 0,
+                           def_label, prop)
+        # Deprecated the non-'S' form
+        extract_cells(node_path, prop, prop_values,
+                      names, 0, def_label, generic, deprecate=True)
+        extract_cells(node_path, prop, prop_values,
+                      names, 0, def_label, prop)
     else:
-        default.extract(node_address, prop, prop_val['type'], def_label)
+        default.extract(node_path, prop,
+                        binding['properties'][prop]['type'],
+                        def_label)
 
 
-def extract_node_include_info(reduced, root_node_address, sub_node_address,
-                              y_sub):
+def generate_node_defines(node_path):
+    # Generates #defines (and .conf file values) from the device
+    # tree node at 'node_path'
 
-    filter_list = ['interrupt-names',
-                    'reg-names',
-                    'phandle',
-                    'linux,phandle']
-    node = reduced[sub_node_address]
-    node_compat = get_compat(root_node_address)
+    if get_compat(node_path) not in get_binding_compats():
+        return
 
-    if node_compat not in get_binding_compats():
-        return {}, {}
+    # We extract a few different #defines for a flash partition, so it's easier
+    # to handle it in one step
+    if 'partition@' in node_path:
+        flash.extract_partition(node_path)
+        return
 
-    if y_sub is None:
-        y_node = get_binding(root_node_address)
-    else:
-        y_node = y_sub
+    if get_binding(node_path) is None:
+        return
 
-    # check to see if we need to process the properties
-    for k, v in y_node['properties'].items():
-            if 'properties' in v:
-                for c in reduced:
-                    if root_node_address + '/' in c:
-                        extract_node_include_info(
-                            reduced, root_node_address, c, v)
-            if 'generation' in v:
+    generate_bus_defines(node_path)
 
-                match = False
+    # Generate per-property ('foo = <1 2 3>', etc.) #defines
+    for yaml_prop, yaml_val in get_binding(node_path)['properties'].items():
+        if yaml_prop.startswith("#") or yaml_prop.endswith("-map"):
+            continue
 
-                # Handle any per node extraction first.  For example we
-                # extract a few different defines for a flash partition so its
-                # easier to handle the partition node in one step
-                if 'partition@' in sub_node_address:
-                    flash.extract_partition(sub_node_address)
-                    continue
+        match = False
 
-                # Handle each property individually, this ends up handling common
-                # patterns for things like reg, interrupts, etc that we don't need
-                # any special case handling at a node level
-                for c in node['props'].keys():
-                    # if prop is in filter list - ignore it
-                    if c in filter_list:
-                        continue
+        # Handle each property individually, this ends up handling common
+        # patterns for things like reg, interrupts, etc that we don't need
+        # any special case handling at a node level
+        for prop in reduced[node_path]['props']:
+            if re.fullmatch(yaml_prop, prop):
+                match = True
+                generate_prop_defines(node_path, prop)
 
-                    if re.match(k + '$', c):
+        # Handle the case that we have a boolean property, but its not
+        # in the dts
+        if not match and yaml_val['type'] == 'boolean':
+            generate_prop_defines(node_path, yaml_prop)
 
-                        if 'pinctrl-' in c:
-                            names = deepcopy(node['props'].get(
-                                                        'pinctrl-names', []))
-                        else:
-                            if not c.endswith("-names"):
-                                names = deepcopy(node['props'].get(
-                                                        c[:-1] + '-names', []))
-                                if not names:
-                                    names = deepcopy(node['props'].get(
-                                                            c + '-names', []))
-                        if not isinstance(names, list):
-                            names = [names]
 
-                        extract_property(
-                            node_compat, sub_node_address, c, v, names)
-                        match = True
+def generate_bus_defines(node_path):
+    # Generates any node-level #defines related to
+    #
+    # parent:
+    #   bus: ...
 
-                # Handle the case that we have a boolean property, but its not
-                # in the dts
-                if not match:
-                    if v['type'] == "boolean":
-                        extract_property(
-                            node_compat, sub_node_address, k, v, None)
+    binding = get_binding(node_path)
+    if not ('parent' in binding and 'bus' in binding['parent']):
+        return
 
-def dict_merge(parent, fname, dct, merge_dct):
-    # from https://gist.github.com/angstwad/bf22d1822c38a92ec0a9
+    parent_path = get_parent_path(node_path)
 
-    """ Recursive dict merge. Inspired by :meth:``dict.update()``, instead of
-    updating only top-level keys, dict_merge recurses down into dicts nested
-    to an arbitrary depth, updating keys. The ``merge_dct`` is merged into
-    ``dct``.
-    :param parent: parent tuple key
-    :param fname: yaml file being processed
-    :param dct: dict onto which the merge is executed
-    :param merge_dct: dct merged into dct
-    :return: None
-    """
-    for k, v in merge_dct.items():
-        if (k in dct and isinstance(dct[k], dict)
-                and isinstance(merge_dct[k], Mapping)):
-            dict_merge(k, fname, dct[k], merge_dct[k])
+    # Check that parent has matching child bus value
+    try:
+        parent_binding = get_binding(parent_path)
+        parent_bus = parent_binding['child']['bus']
+    except (KeyError, TypeError):
+        raise Exception("{0} defines parent {1} as bus master, but {1} is not "
+                        "configured as bus master in binding"
+                        .format(node_path, parent_path))
+
+    if parent_bus != binding['parent']['bus']:
+        raise Exception("{0} defines parent {1} as {2} bus master, but {1} is "
+                        "configured as {3} bus master"
+                        .format(node_path, parent_path,
+                                binding['parent']['bus'], parent_bus))
+
+    # Generate *_BUS_NAME #define
+    extract_bus_name(
+        node_path,
+        'DT_' + node_label(parent_path) + '_' + node_label(node_path))
+
+
+def prop_names(node, prop_name):
+    # Returns a list with the *-names for the property (reg-names,
+    # interrupt-names, etc.) The list is copied so that it can be modified
+    # in-place later without stomping on the device tree data.
+
+    # The first case turns 'interrupts' into 'interrupt-names'
+    names = node['props'].get(prop_name[:-1] + '-names', []) or \
+            node['props'].get(prop_name + '-names', [])
+
+    if isinstance(names, list):
+        # Allow the list of names to be modified in-place without
+        # stomping on the property
+        return names.copy()
+
+    return [names]
+
+
+def merge_properties(parent, fname, to_dict, from_dict):
+    # Recursively merges the 'from_dict' dictionary into 'to_dict', to
+    # implement !include. 'parent' is the current parent key being looked at.
+    # 'fname' is the top-level .yaml file.
+
+    for k in from_dict:
+        if (k in to_dict and isinstance(to_dict[k], dict)
+                         and isinstance(from_dict[k], dict)):
+            merge_properties(k, fname, to_dict[k], from_dict[k])
         else:
-            if k in dct and dct[k] != merge_dct[k]:
-                merge_warn = True
-                # Don't warn if we are changing the "category" from "optional
-                # to "required"
-                if (k == "category" and dct[k] == "optional" and
-                    merge_dct[k] == "required"):
-                    merge_warn = False
-                if merge_warn:
-                    print("extract_dts_includes.py: {}('{}') merge of property '{}': '{}' overwrites '{}'.".format(
-                            fname, parent, k, merge_dct[k], dct[k]))
-            dct[k] = merge_dct[k]
+            to_dict[k] = from_dict[k]
+
+            # Warn when overriding a property and changing its value...
+            if (k in to_dict and to_dict[k] != from_dict[k] and
+                # ...unless it's the 'title', 'description', or 'version'
+                # property. These are overridden deliberately.
+                not k in {'title', 'version', 'description'} and
+                # Also allow the category to be changed from 'optional' to
+                # 'required' without a warning
+                not (k == "category" and to_dict[k] == "optional" and
+                     from_dict[k] == "required")):
+
+                print("extract_dts_includes.py: {}('{}') merge of property "
+                      "'{}': '{}' overwrites '{}'"
+                      .format(fname, parent, k, from_dict[k], to_dict[k]))
 
 
-def yaml_traverse_inherited(fname, node):
-    """ Recursive overload procedure inside ``node``
-    ``inherits`` section is searched for and used as node base when found.
-    Base values are then overloaded by node values
-    and some consistency checks are done.
-    :param fname: initial yaml file being processed
-    :param node:
-    :return: node
-    """
+def merge_included_bindings(fname, node):
+    # Recursively merges properties from files !include'd from the 'inherits'
+    # section of the binding. 'fname' is the path to the top-level binding
+    # file, and 'node' the current top-level YAML node being processed.
 
-    # do some consistency checks. Especially id is needed for further
-    # processing. title must be first to check.
-    if 'title' not in node:
-        # If 'title' is missing, make fault finding more easy.
-        # Give a hint what node we are looking at.
-        print("extract_dts_includes.py: node without 'title' -", node)
-    for prop in ('title', 'version', 'description'):
-        if prop not in node:
-            node[prop] = "<unknown {}>".format(prop)
-            print("extract_dts_includes.py: '{}' property missing".format(prop),
-                  "in '{}' binding. Using '{}'.".format(node['title'], node[prop]))
-
-    # warn if we have an 'id' field
-    if 'id' in node:
-        print("extract_dts_includes.py: WARNING: id field set",
-              "in '{}', should be removed.".format(node['title']))
+    check_binding_properties(node)
 
     if 'inherits' in node:
-        if isinstance(node['inherits'], list):
-            inherits_list  = node['inherits']
-        else:
-            inherits_list  = [node['inherits'],]
-        node.pop('inherits')
-        for inherits in inherits_list:
-            if 'inherits' in inherits:
-                inherits = yaml_traverse_inherited(fname, inherits)
-            # title, description, version of inherited node
-            # are overwritten by intention. Remove to prevent dct_merge to
-            # complain about duplicates.
-            inherits.pop('title', None)
-            inherits.pop('version', None)
-            inherits.pop('description', None)
-            dict_merge(None, fname, inherits, node)
-            node = inherits
+        for inherited in node.pop('inherits'):
+            inherited = merge_included_bindings(fname, inherited)
+            merge_properties(None, fname, inherited, node)
+            node = inherited
+
     return node
 
 
-def get_key_value(k, v, tabstop):
-    label = "#define " + k
+def check_binding_properties(node):
+    # Checks that the top-level YAML node 'node' has the expected properties.
+    # Prints warnings and substitutes defaults otherwise.
 
-    # calculate the name's tabs
-    if len(label) % 8:
-        tabs = (len(label) + 7) >> 3
-    else:
-        tabs = (len(label) >> 3) + 1
+    if 'title' not in node:
+        print("extract_dts_includes.py: node without 'title' -", node)
 
-    line = label
-    for i in range(0, tabstop - tabs + 1):
-        line += '\t'
-    line += str(v)
-    line += '\n'
+    for prop in 'title', 'description':
+        if prop not in node:
+            node[prop] = "<unknown {}>".format(prop)
+            print("extract_dts_includes.py: '{}' property missing "
+                  "in '{}' binding. Using '{}'."
+                  .format(prop, node['title'], node[prop]))
 
-    return line
-
-
-def output_keyvalue_lines(fd):
-    node_keys = sorted(defs.keys())
-    for node in node_keys:
-        fd.write('# ' + node.split('/')[-1])
-        fd.write("\n")
-
-        prop_keys = sorted(defs[node].keys())
-        for prop in prop_keys:
-            if prop == 'aliases':
-                for entry in sorted(defs[node][prop]):
-                    a = defs[node][prop].get(entry)
-                    fd.write("%s=%s\n" % (entry, defs[node].get(a)))
-            else:
-                fd.write("%s=%s\n" % (prop, defs[node].get(prop)))
-
-        fd.write("\n")
-
-def generate_keyvalue_file(kv_file):
-    with open(kv_file, "w") as fd:
-        output_keyvalue_lines(fd)
+    if 'id' in node:
+        print("extract_dts_includes.py: WARNING: id field set "
+              "in '{}', should be removed.".format(node['title']))
 
 
-def output_include_lines(fd):
-    fd.write('''\
+def define_str(name, value, value_tabs, is_deprecated=False):
+    line = "#define " + name
+    if is_deprecated:
+        line += " __DEPRECATED_MACRO "
+    return line + (value_tabs - len(line)//8)*'\t' + str(value) + '\n'
+
+
+def write_conf(f):
+    for node in sorted(defs):
+        f.write('# ' + node.split('/')[-1] + '\n')
+
+        for prop in sorted(defs[node]):
+            if prop != 'aliases' and prop.startswith("DT_"):
+                f.write('%s=%s\n' % (prop, defs[node][prop]))
+
+        for alias in sorted(defs[node]['aliases']):
+            alias_target = defs[node]['aliases'][alias]
+            if alias_target not in defs[node]:
+                alias_target = defs[node]['aliases'][alias_target]
+            if alias.startswith("DT_"):
+                f.write('%s=%s\n' % (alias, defs[node].get(alias_target)))
+
+        f.write('\n')
+
+
+def write_header(f, deprecated_only):
+    f.write('''\
 /**********************************************
 *                 Generated include file
 *                      DO NOT MODIFY
 */
 #ifndef GENERATED_DTS_BOARD_UNFIXED_H
 #define GENERATED_DTS_BOARD_UNFIXED_H
-    '''
-    )
+''')
 
-    node_keys = sorted(defs.keys())
-    for node in node_keys:
-        fd.write('/* ' + node.split('/')[-1] + ' */')
-        fd.write("\n")
+    def max_dict_key(dct):
+        return max(len(key) for key in dct)
 
-        max_dict_key = lambda d: max(len(k) for k in d.keys())
-        maxlength = 0
-        if defs[node].get('aliases'):
-            maxlength = max_dict_key(defs[node]['aliases'])
-        maxlength = max(maxlength, max_dict_key(defs[node])) + len('#define ')
+    for node in sorted(defs):
+        f.write('/* ' + node.split('/')[-1] + ' */\n')
 
-        if maxlength % 8:
-            maxtabstop = (maxlength + 7) >> 3
+        maxlen = max_dict_key(defs[node])
+        if defs[node]['aliases']:
+            maxlen = max(maxlen, max_dict_key(defs[node]['aliases']))
+        maxlen += len('#define ')
+
+        value_tabs = (maxlen + 8)//8  # Tabstop index for value
+        if 8*value_tabs - maxlen <= 2:
+            # Add some minimum room between the macro name and the value
+            value_tabs += 1
+
+        for prop in sorted(defs[node]):
+            if prop != 'aliases':
+                deprecated_warn = False
+                if prop in deprecated_main:
+                    deprecated_warn = True
+                if not prop.startswith('DT_'):
+                    deprecated_warn = True
+                if deprecated_only and not deprecated_warn:
+                    continue
+                f.write(define_str(prop, defs[node][prop], value_tabs, deprecated_warn))
+
+        for alias in sorted(defs[node]['aliases']):
+            alias_target = defs[node]['aliases'][alias]
+            deprecated_warn = False
+            # Mark any non-DT_ prefixed define as deprecated except
+            # for now we special case LED, SW, and *PWM_LED*
+            if not alias.startswith('DT_'):
+                deprecated_warn = True
+            if alias in deprecated:
+                deprecated_warn = True
+            if deprecated_only and not deprecated_warn:
+                continue
+            f.write(define_str(alias, alias_target, value_tabs, deprecated_warn))
+
+        f.write('\n')
+
+    f.write('#endif\n')
+
+
+def load_bindings(root, binding_dirs):
+    find_binding_files(binding_dirs)
+    dts_compats = all_compats(root)
+
+    compat_to_binding = {}
+    # Maps buses to dictionaries that map compats to YAML nodes
+    bus_to_binding = defaultdict(dict)
+    compats = []
+
+    # Add '!include foo.yaml' handling
+    yaml.Loader.add_constructor('!include', yaml_include)
+
+    loaded_yamls = set()
+
+    for file in binding_files:
+        # Extract compat from 'constraint:' line
+        for line in open(file, 'r', encoding='utf-8'):
+            match = re.match(r'\s+constraint:\s*"([^"]*)"', line)
+            if match:
+                break
         else:
-            maxtabstop = (maxlength >> 3) + 1
+            # No 'constraint:' line found. Move on to next yaml file.
+            continue
 
-        if (maxtabstop * 8 - maxlength) <= 2:
-            maxtabstop += 1
+        compat = match.group(1)
+        if compat not in dts_compats or file in loaded_yamls:
+            # The compat does not appear in the device tree, or the yaml
+            # file has already been loaded
+            continue
 
-        prop_keys = sorted(defs[node].keys())
-        for prop in prop_keys:
-            if prop == 'aliases':
-                for entry in sorted(defs[node][prop]):
-                    a = defs[node][prop].get(entry)
-                    fd.write(get_key_value(entry, a, maxtabstop))
-            else:
-                fd.write(get_key_value(prop, defs[node].get(prop), maxtabstop))
+        # Found a binding (.yaml file) for a 'compatible' value that
+        # appears in DTS. Load it.
 
-        fd.write("\n")
+        loaded_yamls.add(file)
 
-    fd.write("#endif\n")
+        if compat not in compats:
+            compats.append(compat)
 
+        with open(file, 'r', encoding='utf-8') as yf:
+            binding = merge_included_bindings(file,
+                                              yaml.load(yf, Loader=yaml.Loader))
 
-def generate_include_file(inc_file):
-    with open(inc_file, "w") as fd:
-        output_include_lines(fd)
+            if 'parent' in binding:
+                bus_to_binding[binding['parent']['bus']][compat] = binding
 
+            compat_to_binding[compat] = binding
 
-def load_and_parse_dts(dts_file):
-    with open(dts_file, "r", encoding="utf-8") as fd:
-        dts = parse_file(fd)
+    if not compat_to_binding:
+        raise Exception("No bindings found in '{}'".format(binding_dirs))
 
-    return dts
-
-
-def load_yaml_descriptions(dts, yaml_dirs):
-    compatibles = get_all_compatibles(dts['/'], '/', {})
-
-    (bindings, bus, bindings_compat) = Bindings.bindings(compatibles, yaml_dirs)
-    if not bindings:
-        raise Exception("Missing YAML information.  Check YAML sources")
-
-    return (bindings, bus, bindings_compat)
+    extract.globals.bindings = compat_to_binding
+    extract.globals.bus_bindings = bus_to_binding
+    extract.globals.binding_compats = compats
 
 
-def generate_node_definitions():
+def find_binding_files(binding_dirs):
+    # Initializes the global 'binding_files' variable with a list of paths to
+    # binding (.yaml) files
 
-    for k, v in reduced.items():
-        node_compat = get_compat(k)
-        if node_compat is not None and node_compat in get_binding_compats():
-            extract_node_include_info(reduced, k, k, None)
+    global binding_files
 
-    if defs == {}:
+    binding_files = []
+
+    for binding_dir in binding_dirs:
+        for root, _, filenames in os.walk(binding_dir):
+            for filename in fnmatch.filter(filenames, '*.yaml'):
+                binding_files.append(os.path.join(root, filename))
+
+
+def yaml_include(loader, node):
+    # Implements !include. Returns a list with the top-level YAML structures
+    # for the included files (a single-element list if there's just one file).
+
+    if isinstance(node, yaml.ScalarNode):
+        # !include foo.yaml
+        return [load_binding_file(loader.construct_scalar(node))]
+
+    if isinstance(node, yaml.SequenceNode):
+        # !include [foo.yaml, bar.yaml]
+        return [load_binding_file(fname)
+                for fname in loader.construct_sequence(node)]
+
+    yaml_inc_error("Error: unrecognised node type in !include statement")
+
+
+def load_binding_file(fname):
+    # yaml_include() helper for loading an !include'd file. !include takes just
+    # the basename of the file, so we need to make sure that there aren't
+    # multiple candidates.
+
+    filepaths = [filepath for filepath in binding_files
+                 if os.path.basename(filepath) == os.path.basename(fname)]
+
+    if not filepaths:
+        yaml_inc_error("Error: unknown file name '{}' in !include statement"
+                       .format(fname))
+
+    if len(filepaths) > 1:
+        yaml_inc_error("Error: multiple candidates for file name '{}' in "
+                       "!include statement: {}".format(fname, filepaths))
+
+    with open(filepaths[0], 'r', encoding='utf-8') as f:
+        return yaml.load(f, Loader=yaml.Loader)
+
+
+def yaml_inc_error(msg):
+    # Helper for reporting errors in the !include implementation
+
+    raise yaml.constructor.ConstructorError(None, None, msg)
+
+
+def generate_defines():
+    # Generates #defines (and .conf file values) from DTS
+
+    # sorted() otherwise Python < 3.6 randomizes the order of the flash
+    # partition table
+    for node_path in sorted(reduced.keys()):
+        generate_node_defines(node_path)
+
+    if not defs:
         raise Exception("No information parsed from dts file.")
 
     for k, v in regs_config.items():
@@ -545,28 +465,26 @@ def generate_node_definitions():
         if k in chosen:
             extract_string_prop(chosen[k], "label", v)
 
-    node_address = chosen.get('zephyr,flash', 'dummy-flash')
-    flash.extract(node_address, 'zephyr,flash', 'FLASH')
-    node_address = chosen.get('zephyr,code-partition', node_address)
-    flash.extract(node_address, 'zephyr,code-partition', 'FLASH')
-
-    return defs
+    flash.extract_flash()
+    flash.extract_code_partition()
 
 
 def parse_arguments():
     rdh = argparse.RawDescriptionHelpFormatter
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=rdh)
 
-    parser.add_argument("-d", "--dts", nargs=1, required=True, help="DTS file")
+    parser.add_argument("-d", "--dts", required=True, help="DTS file")
     parser.add_argument("-y", "--yaml", nargs='+', required=True,
                         help="YAML file directories, we allow multiple")
-    parser.add_argument("-i", "--include", nargs=1,
+    parser.add_argument("-i", "--include",
                         help="Generate include file for the build system")
-    parser.add_argument("-k", "--keyvalue", nargs=1,
+    parser.add_argument("-k", "--keyvalue",
                         help="Generate config file for the build system")
     parser.add_argument("--old-alias-names", action='store_true',
                         help="Generate aliases also in the old way, without "
                              "compatibility information in their labels")
+    parser.add_argument("--deprecated-only", action='store_true',
+                        help="Generate only the deprecated defines")
     return parser.parse_args()
 
 
@@ -574,33 +492,54 @@ def main():
     args = parse_arguments()
     enable_old_alias_names(args.old_alias_names)
 
-    dts = load_and_parse_dts(args.dts[0])
+    # Parse DTS and fetch the root node
+    with open(args.dts, 'r', encoding='utf-8') as f:
+        root = parse_file(f)['/']
 
-    # build up useful lists
-    get_reduced(dts['/'], '/')
-    get_phandles(dts['/'], '/', {})
-    get_aliases(dts['/'])
-    get_chosen(dts['/'])
+    # Create some global data structures from the parsed DTS
+    create_reduced(root, '/')
+    create_phandles(root, '/')
+    create_aliases(root)
+    create_chosen(root)
 
-    (extract.globals.bindings, extract.globals.bus_bindings,
-     extract.globals.bindings_compat) = load_yaml_descriptions(dts, args.yaml)
+    # Re-sort instance_id by reg addr
+    #
+    # Note: this is a short term fix and should be removed when
+    # generate defines for instance with a prefix like 'DT_INST'
+    #
+    # Build a dict of dicts, first level is index by compat
+    # second level is index by reg addr
+    compat_reg_dict = defaultdict(dict)
+    for node in reduced.values():
+        instance = node.get('instance_id')
+        if instance and node['addr'] is not None:
+            for compat in instance:
+                reg = node['addr']
+                compat_reg_dict[compat][reg] = node
 
-    defs = generate_node_definitions()
+    # Walk the reg addr in sorted order to re-index 'instance_id'
+    for compat in compat_reg_dict:
+        # only update if we have more than one instance
+        if len(compat_reg_dict[compat]) > 1:
+            for idx, reg_addr in enumerate(sorted(compat_reg_dict[compat])):
+                compat_reg_dict[compat][reg_addr]['instance_id'][compat] = idx
 
-    # Add DT_CHOSEN_<X> defines to generated files
-    for c in sorted(chosen.keys()):
-        chosen_def = 'DT_CHOSEN_' + convert_string_to_label(c)
-        load_defs = {
-            chosen_def: "1",
-        }
-        insert_defs('chosen', load_defs, {})
+    # Load any bindings (.yaml files) that match 'compatible' values from the
+    # DTS
+    load_bindings(root, args.yaml)
 
-     # generate config and include file
-    if (args.keyvalue is not None):
-       generate_keyvalue_file(args.keyvalue[0])
+    # Generate keys and values for the configuration file and the header file
+    generate_defines()
 
-    if (args.include is not None):
-       generate_include_file(args.include[0])
+    # Write the configuration file and the header file
+
+    if args.keyvalue is not None:
+        with open(args.keyvalue, 'w', encoding='utf-8') as f:
+            write_conf(f)
+
+    if args.include is not None:
+        with open(args.include, 'w', encoding='utf-8') as f:
+            write_header(f, args.deprecated_only)
 
 
 if __name__ == '__main__':

@@ -1,4 +1,6 @@
 
+.. _sanitycheck_script:
+
 Zephyr Sanity Tests
 ###################
 
@@ -16,6 +18,21 @@ cannot guarantee local changes will succeed in the full build
 environment, but it does sufficient testing by building samples and
 tests for different boards and different configurations to help keep the
 full code tree buildable.
+
+When using (at least) one ``-v`` option, sanitycheck's console output
+shows for every test how the test is run (qemu, native_posix, etc.) or
+whether the image is just built.  There are a few reasons why sanitycheck
+only builds a test and doesn't run it:
+
+- The test is marked as ``build_only: true`` in its ``.yaml``
+  configuration file.
+- The test configuration has defined a ``harness`` but you don't have
+  it or haven't set it up.
+- You or some higher level automation invoked sanitycheck with
+  ``--build-only``.
+
+These also affect the outputs of ``--testcase-report`` and
+``--detailed-report``, see their respective ``--help`` sections.
 
 To run the script in the local tree, follow the steps below:
 
@@ -36,7 +53,8 @@ a simulated (QEMU) environment.
 
 The sanitycheck script accepts the following optional arguments:
 
-  -h, --help            show this help message and exit
+  -h, --help            Show the complete and most up-to-date help message
+                        and exit.
   -p PLATFORM, --platform PLATFORM
                         Platform filter for testing. This option may be used
                         multiple times. Testcases will only be built/run on
@@ -181,15 +199,15 @@ required for best test coverage for this specific board:
 
 .. code-block:: yaml
 
-        identifier: quark_d2000_crb
-        name: Quark D2000 Devboard
+        identifier: tinytile
+        name: tinyTILE
         type: mcu
         arch: x86
         toolchain:
           - zephyr
           - issm
-        ram: 8
-        flash: 32
+        ram: 52
+        flash: 192
         testing:
           default: true
           ignore_tags:
@@ -199,9 +217,13 @@ required for best test coverage for this specific board:
 
 identifier:
   A string that matches how the board is defined in the build system. This same
-  string is used when building, for example when calling 'cmake'::
+  string is used when building, for example when calling ``west build`` or
+  ``cmake``::
 
-  # cmake -DBOARD=quark_d2000_crb ..
+     # with west
+     west build -b tinytile
+     # with cmake
+     cmake -DBOARD=tinytile ..
 
 name:
   The actual name of the board as it appears in marketing material.
@@ -270,13 +292,13 @@ explained in this document.
         tests:
           test:
             build_only: true
-            platform_whitelist: qemu_cortex_m3 qemu_x86 arduino_101
+            platform_whitelist: qemu_cortex_m3 qemu_x86
             tags: bluetooth
           test_br:
             build_only: true
             extra_args: CONF_FILE="prj_br.conf"
             filter: not CONFIG_DEBUG
-            platform_exclude: quark_d2000_crb
+            platform_exclude: up_squared
             platform_whitelist: qemu_cortex_m3 qemu_x86
             tags: bluetooth
 
@@ -337,15 +359,13 @@ extra_configs: <list of extra configurations>
         tests:
           test:
             depends_on: adc
-          test_resolution_6:
+          test_async:
             extra_configs:
-              - CONFIG_ADC_QMSI_SAMPLE_WIDTH=6
-            platform_whitelist: quark_se_c1000_ss_devboard
-            tags: hwtest
+              - CONFIG_ADC_ASYNC=y
 
 
 build_only: <True|False> (default False)
-    If true, don't try to run the test under QEMU even if the
+    If true, don't try to run the test even if the
     selected platform supports it.
 
 build_on_all: <True|False> (default False)
@@ -499,9 +519,9 @@ filter: <expression>
 
     The ':' operator compiles the string argument as a regular expression,
     and then returns a true value only if the symbol's value in the environment
-    matches. For example, if CONFIG_SOC="quark_se" then
+    matches. For example, if CONFIG_SOC="stm32f107xc" then
 
-        filter = CONFIG_SOC : "quark.*"
+        filter = CONFIG_SOC : "stm.*"
 
     Would match it.
 

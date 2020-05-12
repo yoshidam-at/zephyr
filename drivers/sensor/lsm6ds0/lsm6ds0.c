@@ -8,12 +8,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sensor.h>
+#include <drivers/sensor.h>
 #include <kernel.h>
 #include <device.h>
 #include <init.h>
-#include <misc/byteorder.h>
-#include <misc/__assert.h>
+#include <sys/byteorder.h>
+#include <sys/__assert.h>
 #include <logging/log.h>
 
 #include "lsm6ds0.h"
@@ -33,7 +33,7 @@ static inline int lsm6ds0_reboot(struct device *dev)
 		return -EIO;
 	}
 
-	k_busy_wait(50 * USEC_PER_MSEC);
+	k_busy_wait(USEC_PER_MSEC * 50U);
 
 	return 0;
 }
@@ -500,12 +500,12 @@ static int lsm6ds0_init(struct device *dev)
 }
 
 static const struct lsm6ds0_config lsm6ds0_config = {
-	.i2c_master_dev_name = DT_ST_LSM6DS0_0_BUS_NAME,
-	.i2c_slave_addr = DT_ST_LSM6DS0_0_BASE_ADDRESS,
+	.i2c_master_dev_name = DT_INST_0_ST_LSM6DS0_BUS_NAME,
+	.i2c_slave_addr = DT_INST_0_ST_LSM6DS0_BASE_ADDRESS,
 };
 
 static struct lsm6ds0_data lsm6ds0_data;
 
-DEVICE_AND_API_INIT(lsm6ds0, DT_ST_LSM6DS0_0_LABEL, lsm6ds0_init,
+DEVICE_AND_API_INIT(lsm6ds0, DT_INST_0_ST_LSM6DS0_LABEL, lsm6ds0_init,
 		    &lsm6ds0_data, &lsm6ds0_config, POST_KERNEL,
 		    CONFIG_SENSOR_INIT_PRIORITY, &lsm6ds0_api_funcs);

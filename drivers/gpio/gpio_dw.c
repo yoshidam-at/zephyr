@@ -7,27 +7,27 @@
 #include <errno.h>
 
 #include <kernel.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 #include "gpio_dw.h"
 #include "gpio_utils.h"
 
 #include <soc.h>
-#include <sys_io.h>
+#include <sys/sys_io.h>
 #include <init.h>
-#include <misc/util.h>
-#include <misc/__assert.h>
-#include <clock_control.h>
+#include <sys/util.h>
+#include <sys/__assert.h>
+#include <drivers/clock_control.h>
 
 #ifdef CONFIG_SHARED_IRQ
 #include <shared_irq.h>
 #endif
 
 #ifdef CONFIG_IOAPIC
-#include <drivers/ioapic.h>
+#include <drivers/interrupt_controller/ioapic.h>
 #endif
 
 #ifdef CONFIG_DEVICE_POWER_MANAGEMENT
-#include <power.h>
+#include <power/power.h>
 #endif
 
 /*
@@ -79,7 +79,7 @@ static void dw_set_bit(u32_t base_addr, u32_t offset,
 #endif
 
 #ifdef CONFIG_GPIO_DW_CLOCK_GATE
-static inline void _gpio_dw_clock_config(struct device *port)
+static inline void gpio_dw_clock_config(struct device *port)
 {
 	char *drv = CONFIG_GPIO_DW_CLOCK_GATE_DRV_NAME;
 	struct device *clk;
@@ -92,7 +92,7 @@ static inline void _gpio_dw_clock_config(struct device *port)
 	}
 }
 
-static inline void _gpio_dw_clock_on(struct device *port)
+static inline void gpio_dw_clock_on(struct device *port)
 {
 	const struct gpio_dw_config *config = port->config->config_info;
 	struct gpio_dw_runtime *context = port->driver_data;
@@ -100,7 +100,7 @@ static inline void _gpio_dw_clock_on(struct device *port)
 	clock_control_on(context->clock, config->clock_data);
 }
 
-static inline void _gpio_dw_clock_off(struct device *port)
+static inline void gpio_dw_clock_off(struct device *port)
 {
 	const struct gpio_dw_config *config = port->config->config_info;
 	struct gpio_dw_runtime *context = port->driver_data;
@@ -108,27 +108,11 @@ static inline void _gpio_dw_clock_off(struct device *port)
 	clock_control_off(context->clock, config->clock_data);
 }
 #else
-#define _gpio_dw_clock_config(...)
-#define _gpio_dw_clock_on(...)
-#define _gpio_dw_clock_off(...)
+#define gpio_dw_clock_config(...)
+#define gpio_dw_clock_on(...)
+#define gpio_dw_clock_off(...)
 #endif
 
-#ifdef CONFIG_SOC_QUARK_SE_C1000_SS
-static inline void dw_set_both_edges(u32_t base_addr, u32_t pin)
-{
-	ARG_UNUSED(base_addr);
-	ARG_UNUSED(pin);
-}
-static inline int dw_base_to_block_base(u32_t base_addr)
-{
-	return base_addr;
-}
-static inline int dw_interrupt_support(const struct gpio_dw_config *config)
-{
-	ARG_UNUSED(config);
-	return 1;
-}
-#else
 static inline void dw_set_both_edges(u32_t base_addr, u32_t pin)
 {
 	dw_set_bit(base_addr, INT_BOTHEDGE, pin, 1);
@@ -139,14 +123,13 @@ static inline int dw_base_to_block_base(u32_t base_addr)
 }
 static inline int dw_derive_port_from_base(u32_t base_addr)
 {
-	u32_t port = (base_addr & 0x3f) / 12;
+	u32_t port = (base_addr & 0x3f) / 12U;
 	return port;
 }
 static inline int dw_interrupt_support(const struct gpio_dw_config *config)
 {
 	return ((int)(config->irq_num) > 0);
 }
-#endif
 
 static inline void dw_interrupt_config(struct device *port, int access_op,
 				       u32_t pin, int flags)
@@ -254,13 +237,8 @@ static inline int gpio_dw_read(struct device *port, int access_op,
 {
 	struct gpio_dw_runtime *context = port->driver_data;
 	u32_t base_addr = context->base_addr;
-#ifndef CONFIG_SOC_QUARK_SE_C1000_SS
 	u32_t ext_port = EXT_PORTA;
-#endif
 
-#ifdef CONFIG_SOC_QUARK_SE_C1000_SS
-	*value = dw_read(base_addr, EXT_PORTA);
-#else
 	/* 4-port GPIO implementation translates from base address to port */
 	switch (dw_derive_port_from_base(base_addr)) {
 	case 1:
@@ -277,7 +255,6 @@ static inline int gpio_dw_read(struct device *port, int access_op,
 		break;
 	}
 	*value = dw_read(dw_base_to_block_base(base_addr), ext_port);
-#endif
 
 	if (GPIO_ACCESS_BY_PIN == access_op) {
 		*value = !!(*value & BIT(pin));
@@ -291,7 +268,7 @@ static inline int gpio_dw_manage_callback(struct device *port,
 {
 	struct gpio_dw_runtime *context = port->driver_data;
 
-	return _gpio_manage_callback(&context->callbacks, callback, set);
+	return gpio_manage_callback(&context->callbacks, callback, set);
 }
 
 static inline int gpio_dw_enable_callback(struct device *port, int access_op,
@@ -345,7 +322,7 @@ static u32_t gpio_dw_get_power_state(struct device *port)
 
 static inline int gpio_dw_suspend_port(struct device *port)
 {
-	_gpio_dw_clock_off(port);
+	gpio_dw_clock_off(port);
 	gpio_dw_set_power_state(port, DEVICE_PM_SUSPEND_STATE);
 
 	return 0;
@@ -353,7 +330,7 @@ static inline int gpio_dw_suspend_port(struct device *port)
 
 static inline int gpio_dw_resume_from_suspend_port(struct device *port)
 {
-	_gpio_dw_clock_on(port);
+	gpio_dw_clock_on(port);
 	gpio_dw_set_power_state(port, DEVICE_PM_ACTIVE_STATE);
 	return 0;
 }
@@ -363,38 +340,31 @@ static inline int gpio_dw_resume_from_suspend_port(struct device *port)
 * the *context may include IN data or/and OUT data
 */
 static int gpio_dw_device_ctrl(struct device *port, u32_t ctrl_command,
-							void *context)
+			       void *context, device_pm_cb cb, void *arg)
 {
+	int ret = 0;
+
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
 		if (*((u32_t *)context) == DEVICE_PM_SUSPEND_STATE) {
-			return gpio_dw_suspend_port(port);
+			ret = gpio_dw_suspend_port(port);
 		} else if (*((u32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
-			return gpio_dw_resume_from_suspend_port(port);
+			ret = gpio_dw_resume_from_suspend_port(port);
 		}
 	} else if (ctrl_command == DEVICE_PM_GET_POWER_STATE) {
 		*((u32_t *)context) = gpio_dw_get_power_state(port);
-		return 0;
 	}
-	return 0;
+
+	if (cb) {
+		cb(port, ret, context, arg);
+	}
+	return ret;
 }
 
 #else
 #define gpio_dw_set_power_state(...)
 #endif
 
-#if defined(CONFIG_SOC_QUARK_SE_C1000) || defined(CONFIG_SOC_QUARK_D2000)
-static inline void gpio_dw_unmask_int(u32_t mask_addr)
-{
-	sys_write32(sys_read32(mask_addr) & INT_UNMASK_IA, mask_addr);
-}
-#elif CONFIG_SOC_QUARK_SE_C1000_SS
-static inline void gpio_dw_unmask_int(u32_t mask_addr)
-{
-	sys_write32(sys_read32(mask_addr) & INT_ENABLE_ARC, mask_addr);
-}
-#else
 #define gpio_dw_unmask_int(...)
-#endif
 
 static void gpio_dw_isr(void *arg)
 {
@@ -417,7 +387,7 @@ static void gpio_dw_isr(void *arg)
 
 	dw_write(base_addr, PORTA_EOI, int_status);
 
-	_gpio_fire_callbacks(&context->callbacks, port, int_status);
+	gpio_fire_callbacks(&context->callbacks, port, int_status);
 }
 
 static const struct gpio_driver_api api_funcs = {
@@ -468,15 +438,11 @@ static int gpio_dw_initialize(struct device *port)
 	if (dw_interrupt_support(config)) {
 
 		base_addr = dw_base_to_block_base(context->base_addr);
-#ifdef CONFIG_SOC_QUARK_SE_C1000_SS
-		/* Need to enable clock for GPIO controller */
-		dw_set_bit(base_addr, INT_CLOCK_SYNC, CLK_ENA_POS, 1);
-#endif /* CONFIG_SOC_QUARK_SE_C1000_SS */
 
 		/* interrupts in sync with system clock */
 		dw_set_bit(base_addr, INT_CLOCK_SYNC, LS_SYNC_POS, 1);
 
-		_gpio_dw_clock_config(port);
+		gpio_dw_clock_config(port);
 
 		/* mask and disable interrupts */
 		dw_write(base_addr, INTMASK, ~(0));
@@ -502,7 +468,7 @@ static const struct gpio_dw_config gpio_config_0 = {
 	.bits = DT_GPIO_DW_0_BITS,
 	.config_func = gpio_config_0_irq,
 #ifdef CONFIG_GPIO_DW_0_IRQ_SHARED
-	.shared_irq_dev_name = CONFIG_GPIO_DW_0_IRQ_SHARED_NAME,
+	.shared_irq_dev_name = DT_GPIO_DW_0_IRQ_SHARED_NAME,
 #endif
 #ifdef CONFIG_GPIO_DW_CLOCK_GATE
 	.clock_data = UINT_TO_POINTER(CONFIG_GPIO_DW_0_CLOCK_GATE_SUBSYS),
@@ -571,7 +537,7 @@ static const struct gpio_dw_config gpio_dw_config_1 = {
 	.config_func = gpio_config_1_irq,
 
 #ifdef CONFIG_GPIO_DW_1_IRQ_SHARED
-	.shared_irq_dev_name = CONFIG_GPIO_DW_1_IRQ_SHARED_NAME,
+	.shared_irq_dev_name = DT_GPIO_DW_1_IRQ_SHARED_NAME,
 #endif
 #ifdef CONFIG_GPIO_DW_CLOCK_GATE
 	.clock_data = UINT_TO_POINTER(CONFIG_GPIO_DW_1_CLOCK_GATE_SUBSYS),
@@ -638,7 +604,7 @@ static const struct gpio_dw_config gpio_dw_config_2 = {
 	.config_func = gpio_config_2_irq,
 
 #ifdef CONFIG_GPIO_DW_2_IRQ_SHARED
-	.shared_irq_dev_name = CONFIG_GPIO_DW_2_IRQ_SHARED_NAME,
+	.shared_irq_dev_name = DT_GPIO_DW_2_IRQ_SHARED_NAME,
 #endif
 #ifdef CONFIG_GPIO_DW_CLOCK_GATE
 	.clock_data = UINT_TO_POINTER(CONFIG_GPIO_DW_2_CLOCK_GATE_SUBSYS),
@@ -705,7 +671,7 @@ static const struct gpio_dw_config gpio_dw_config_3 = {
 	.config_func = gpio_config_3_irq,
 
 #ifdef CONFIG_GPIO_DW_3_IRQ_SHARED
-	.shared_irq_dev_name = CONFIG_GPIO_DW_3_IRQ_SHARED_NAME,
+	.shared_irq_dev_name = DT_GPIO_DW_3_IRQ_SHARED_NAME,
 #endif
 #ifdef CONFIG_GPIO_DW_CLOCK_GATE
 	.clock_data = UINT_TO_POINTER(CONFIG_GPIO_DW_3_CLOCK_GATE_SUBSYS),

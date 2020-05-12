@@ -12,13 +12,13 @@
 
 #include <zephyr.h>
 #include <arch/cpu.h>
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 #include <logging/log.h>
-#include <misc/util.h>
+#include <sys/util.h>
 
 #include <device.h>
 #include <init.h>
-#include <uart.h>
+#include <drivers/uart.h>
 
 #include <net/buf.h>
 #include <bluetooth/bluetooth.h>
@@ -103,7 +103,7 @@ static size_t h4_discard(struct device *uart, size_t len)
 {
 	u8_t buf[H4_DISCARD_LEN];
 
-	return uart_fifo_read(uart, buf, min(len, sizeof(buf)));
+	return uart_fifo_read(uart, buf, MIN(len, sizeof(buf)));
 }
 
 static struct net_buf *h4_cmd_recv(int *remaining)
@@ -329,6 +329,7 @@ static int hci_uart_init(struct device *unused)
 {
 	LOG_DBG("");
 
+	/* Derived from DT's bt-c2h-uart chosen node */
 	hci_uart_dev = device_get_binding(CONFIG_BT_CTLR_TO_HOST_UART_DEV_NAME);
 	if (!hci_uart_dev) {
 		return -EINVAL;
@@ -354,9 +355,37 @@ void main(void)
 	int err;
 
 	LOG_DBG("Start");
+	__ASSERT(hci_uart_dev, "UART device is NULL");
 
 	/* Enable the raw interface, this will in turn open the HCI driver */
 	bt_enable_raw(&rx_queue);
+
+	if (IS_ENABLED(CONFIG_BT_WAIT_NOP)) {
+		/* Issue a Command Complete with NOP */
+		int i;
+
+		const struct {
+			const u8_t h4;
+			const struct bt_hci_evt_hdr hdr;
+			const struct bt_hci_evt_cmd_complete cc;
+		} __packed cc_evt = {
+			.h4 = H4_EVT,
+			.hdr = {
+				.evt = BT_HCI_EVT_CMD_COMPLETE,
+				.len = sizeof(struct bt_hci_evt_cmd_complete),
+			},
+			.cc = {
+				.ncmd = 1,
+				.opcode = sys_cpu_to_le16(BT_OP_NOP),
+			},
+		};
+
+		for (i = 0; i < sizeof(cc_evt); i++) {
+			uart_poll_out(hci_uart_dev,
+				      *(((const u8_t *)&cc_evt)+i));
+		}
+	}
+
 	/* Spawn the TX thread and start feeding commands and data to the
 	 * controller
 	 */

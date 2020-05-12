@@ -8,13 +8,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sensor.h>
+#include <drivers/sensor.h>
 #include <kernel.h>
 #include <device.h>
 #include <init.h>
 #include <string.h>
-#include <misc/byteorder.h>
-#include <misc/__assert.h>
+#include <sys/byteorder.h>
+#include <sys/__assert.h>
 #include <logging/log.h>
 
 #include "lsm6dsl.h"
@@ -98,7 +98,7 @@ static inline int lsm6dsl_reboot(struct device *dev)
 	}
 
 	/* Wait sensor turn-on time as per datasheet */
-	k_busy_wait(35 * USEC_PER_MSEC);
+	k_busy_wait(USEC_PER_MSEC * 35U);
 
 	return 0;
 }
@@ -773,7 +773,7 @@ static int lsm6dsl_init_chip(struct device *dev)
 }
 
 static struct lsm6dsl_config lsm6dsl_config = {
-	.comm_master_dev_name = DT_ST_LSM6DSL_0_BUS_NAME,
+	.comm_master_dev_name = DT_INST_0_ST_LSM6DSL_BUS_NAME,
 };
 
 static int lsm6dsl_init(struct device *dev)
@@ -819,6 +819,6 @@ static int lsm6dsl_init(struct device *dev)
 
 static struct lsm6dsl_data lsm6dsl_data;
 
-DEVICE_AND_API_INIT(lsm6dsl, DT_ST_LSM6DSL_0_LABEL, lsm6dsl_init,
+DEVICE_AND_API_INIT(lsm6dsl, DT_INST_0_ST_LSM6DSL_LABEL, lsm6dsl_init,
 		    &lsm6dsl_data, &lsm6dsl_config, POST_KERNEL,
 		    CONFIG_SENSOR_INIT_PRIORITY, &lsm6dsl_api_funcs);

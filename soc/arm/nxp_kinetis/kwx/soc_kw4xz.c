@@ -8,7 +8,7 @@
 #include <device.h>
 #include <init.h>
 #include <soc.h>
-#include <uart.h>
+#include <drivers/uart.h>
 #include <linker/sections.h>
 #include <fsl_common.h>
 #include <fsl_clock.h>
@@ -73,7 +73,7 @@ static const sim_clock_config_t simConfig = {
 };
 
 /* This function comes from the MCUX SDK:
- * ext/hal/nxp/mcux/devices/MKW41Z4/clock_config.c
+ * modules/hal/nxp/mcux/devices/MKW41Z4/clock_config.c
  */
 static void CLOCK_SYS_FllStableDelay(void)
 {

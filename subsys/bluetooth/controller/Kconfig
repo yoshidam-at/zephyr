@@ -16,31 +16,34 @@ if BT_CTLR
 
 choice BT_LL_CHOICE
 	prompt "Bluetooth Link Layer Selection"
-	default BT_LL_SW
 	help
 	  Select the Bluetooth Link Layer to compile.
 
-config BT_LL_SW
+config BT_LL_SW_SPLIT
 	bool "Software-based BLE Link Layer"
 	select BT_RECV_IS_RX_THREAD
+	select ENTROPY_GENERATOR
+	help
+	  Use Zephyr software BLE Link Layer ULL LLL split implementation.
+
+config BT_LL_SW_LEGACY
+	# NOTE: This OLD architecture implementation will be deprecated, with
+	#       no further new feature development.
+	bool "Software-based BLE Link Layer (deprecated)"
+	select BT_RECV_IS_RX_THREAD
+	select BT_HAS_HCI_VS
 	select ENTROPY_GENERATOR
 	select ENTROPY_NRF5_RNG if SOC_COMPATIBLE_NRF
 	select ENTROPY_NRF5_BIAS_CORRECTION if SOC_COMPATIBLE_NRF
 	help
 	  Use Zephyr software BLE Link Layer implementation.
 
-config BT_LL_SW_SPLIT
-	bool "Software-based BLE Link Layer (ULL/LLL split)"
-	select BT_RECV_IS_RX_THREAD
-	select ENTROPY_GENERATOR
-	help
-	  Use Zephyr software BLE Link Layer ULL LLL split implementation.
-
 endchoice
 
 config BT_LLL_VENDOR_NORDIC
 	bool "Use Nordic LLL"
 	depends on BT_LL_SW_SPLIT && SOC_COMPATIBLE_NRF
+	select BT_HAS_HCI_VS
 	select ENTROPY_NRF5_RNG
 	select ENTROPY_NRF5_BIAS_CORRECTION
 	default y
@@ -57,9 +60,8 @@ config BT_CTLR_CRYPTO
 	  provided by the controller.
 
 config BT_CTLR_RX_PRIO_STACK_SIZE
-	# Hidden option for Controller's Co-Operative high priority Rx thread
-	# stack size.
-	int
+	# Controller's Co-Operative high priority Rx thread stack size.
+	int "High priority Rx thread stack size" if !SOC_COMPATIBLE_NRF
 	default 448
 
 config BT_CTLR_RX_PRIO
@@ -88,8 +90,7 @@ config BT_CTLR_DUP_FILTER_LEN
 	  duplicates while scanning.
 
 config BT_CTLR_MESH_SCAN_FILTERS
-	prompt "Number of Mesh scan filters"
-	int
+	int "Number of Mesh scan filters"
 	depends on BT_HCI_MESH_EXT
 	default 1
 	range 1 15
@@ -98,8 +99,7 @@ config BT_CTLR_MESH_SCAN_FILTERS
 	  the Intel Mesh Vendor Specific Extensions.
 
 config BT_CTLR_MESH_SF_PATTERNS
-	prompt "Number of Mesh scan filter patterns"
-	int
+	int "Number of Mesh scan filter patterns"
 	depends on BT_HCI_MESH_EXT
 	default 15
 	range 1 15
@@ -201,6 +201,19 @@ config BT_CTLR_TX_PWR_MINUS_40
 
 endchoice
 
+config BT_CTLR_SETTINGS
+	bool "Settings System"
+	depends on BT_SETTINGS
+	help
+	  Enable use of settings system in controller.
+
+config BT_CTLR_VERSION_SETTINGS
+	bool "Version Settings"
+	depends on BT_CTLR_SETTINGS
+	help
+	  Make Company Id and Subversion Number configurable through
+	  settings system.
+
 config BT_CTLR_COMPANY_ID
 	hex "Company Id"
 	default 0x05F1
@@ -293,14 +306,13 @@ config BT_CTLR_DATA_LENGTH
 	# Update procedure in the Controller.
 	bool
 	depends on BT_DATA_LEN_UPDATE
-	default y if SOC_COMPATIBLE_NRF52X
+	default y if SOC_COMPATIBLE_NRF52X || BT_CTLR_DATA_LENGTH_CLEAR
 
 config BT_CTLR_DATA_LENGTH_MAX
 	int "Maximum data length supported"
 	depends on BT_CTLR_DATA_LENGTH
 	default 27
-	range 27 251 if SOC_COMPATIBLE_NRF52X || BT_CTLR_DATA_LENGTH_CLEAR
-	range 27 27
+	range 27 251
 	help
 	  Set the maximum data length of PDU supported in the Controller.
 
@@ -310,7 +322,7 @@ config BT_CTLR_PHY
 	bool
 	depends on BT_PHY_UPDATE
 	select BT_CTLR_EXT_REJ_IND
-	default y if SOC_COMPATIBLE_NRF52X
+	default y if SOC_COMPATIBLE_NRF52X || BT_CTLR_PHY_2M_NRF
 
 endif # BT_CONN
 
@@ -332,15 +344,13 @@ config BT_CTLR_ADV_EXT
 	bool "LE Advertising Extensions"
 	select BT_CTLR_SCAN_REQ_NOTIFY
 	select BT_CTLR_CHAN_SEL_2
-	default y
 	help
 	  Enable support for Bluetooth 5.0 LE Advertising Extensions in the
 	  Controller.
 
 config BT_ADV_SET
-	prompt "LE Advertising Extensions Sets"
+	int "LE Advertising Extensions Sets"
 	depends on BT_CTLR_ADV_EXT
-	int
 	default 1
 	help
 	  Maximum supported advertising sets.
@@ -365,29 +375,20 @@ menu "Advanced features"
 	visible if BT_CTLR_ADVANCED_FEATURES
 
 config BT_CTLR_FILTER
-	prompt "Device Whitelist Support"
-	bool
+	bool "Device Whitelist Support"
 	default y
 	help
 	  Enable support for controller device whitelist feature
 
 config BT_CTLR_DATA_LENGTH_CLEAR
 	bool "Data Length Support (Cleartext only)"
-	depends on BT_CTLR_DATA_LENGTH && SOC_SERIES_NRF51X
+	depends on SOC_SERIES_NRF51X
 	help
 	  Enable support for Bluetooth v4.2 LE Data Length Update procedure, up to
 	  251 byte cleartext payloads in the Controller. Encrypted connections
 	  are not supported.
 
-if BT_CTLR_PHY
-
-config BT_CTLR_PHY_2M
-	bool "2Mbps PHY Support"
-	depends on !SOC_SERIES_NRF51X || BT_CTLR_PHY_2M_NRF
-	default y
-	help
-	  Enable support for Bluetooth 5.0 2Mbps PHY in the Controller.
-
+if BT_PHY_UPDATE
 config BT_CTLR_PHY_2M_NRF
 	bool "2Mbps Nordic Semiconductor PHY Support (Cleartext only)"
 	depends on SOC_SERIES_NRF51X
@@ -396,7 +397,12 @@ config BT_CTLR_PHY_2M_NRF
 	  Enable support for Nordic Semiconductor proprietary 2Mbps PHY in the
 	  Controller. Encrypted connections are not supported.
 
-endif # BT_CTLR_PHY
+config BT_CTLR_PHY_2M
+	bool "2Mbps PHY Support"
+	depends on !SOC_SERIES_NRF51X || BT_CTLR_PHY_2M_NRF
+	default y
+	help
+	  Enable support for Bluetooth 5.0 2Mbps PHY in the Controller.
 
 config BT_CTLR_PHY_CODED
 	bool "Coded PHY Support"
@@ -404,8 +410,9 @@ config BT_CTLR_PHY_CODED
 	default y
 	help
 	  Enable support for Bluetooth 5.0 Coded PHY in the Controller.
+endif # BT_PHY_UPDATE
 
-if BT_LL_SW
+if BT_LL_SW_LEGACY
 
 config BT_CTLR_WORKER_PRIO
 	int "Radio and Ticker's Worker IRQ priority"
@@ -425,7 +432,7 @@ config BT_CTLR_JOB_PRIO
 	  The interrupt priority for Ticker's Job (SWI4) IRQ. This value shall
 	  be greater than or equal to the Ticker's Worker IRQ priority value.
 
-endif # BT_LL_SW
+endif # BT_LL_SW_LEGACY
 
 config BT_CTLR_XTAL_ADVANCED
 	bool "Advanced event preparation"
@@ -477,8 +484,7 @@ config BT_CTLR_SCHED_ADVANCED
 
 if BT_LL_SW_SPLIT
 config BT_CTLR_LLL_PRIO
-	prompt "Lower Link Layer (Radio) IRQ priority"
-	int
+	int "Lower Link Layer (Radio) IRQ priority"
 	range 0 3 if SOC_SERIES_NRF51X
 	range 0 6 if SOC_SERIES_NRF52X
 	default 0
@@ -486,43 +492,48 @@ config BT_CTLR_LLL_PRIO
 	  The interrupt priority for event preparation and radio IRQ.
 
 config BT_CTLR_ULL_HIGH_PRIO
-	prompt "Upper Link Layer High IRQ priority"
-	int
+	int "Upper Link Layer High IRQ priority"
 	range BT_CTLR_LLL_PRIO 3 if SOC_SERIES_NRF51X
 	range BT_CTLR_LLL_PRIO 6 if SOC_SERIES_NRF52X
-	default 0
+	default BT_CTLR_LLL_PRIO
 	help
 	  The interrupt priority for Ticker's Worker IRQ and Upper Link Layer
 	  higher priority functions.
 
 config BT_CTLR_ULL_LOW_PRIO
-	prompt "Upper Link Layer Low IRQ priority"
-	int
+	int "Upper Link Layer Low IRQ priority"
 	range BT_CTLR_ULL_HIGH_PRIO 3 if SOC_SERIES_NRF51X
 	range BT_CTLR_ULL_HIGH_PRIO 6 if SOC_SERIES_NRF52X
-	default 0
+	default BT_CTLR_ULL_HIGH_PRIO
 	help
 	  The interrupt priority for Ticker's Job IRQ and Upper Link Layer
 	  lower priority functions.
 
 config BT_CTLR_LOWEST_PRIO
-	prompt "Link Layer Lowest IRQ priority"
-	int
+	int "Link Layer Lowest IRQ priority"
 	range BT_CTLR_ULL_LOW_PRIO 3 if SOC_SERIES_NRF51X
 	range BT_CTLR_ULL_LOW_PRIO 6 if SOC_SERIES_NRF52X
-	default 0
+	default BT_CTLR_ULL_LOW_PRIO
 	help
 	  The interrupt priority for RNG and other non-critical functions.
 
 config BT_CTLR_LOW_LAT
-	prompt "Low latency non-negotiating event pre-emption"
-	bool
+	bool "Low latency non-negotiating event preemption"
 	default y if SOC_SERIES_NRF51X
 	help
-	  Use low latency non-negotiating event pre-emption. This reduces
+	  Use low latency non-negotiating event preemption. This reduces
 	  Radio ISR latencies by the controller event scheduling framework.
 	  Consequently, this reduces on-air radio utilization due to redundant
 	  radio state switches.
+
+config BT_CTLR_LOW_LAT_ULL
+	prompt "Low latency ULL"
+	bool
+	depends on BT_CTLR_LOW_LAT
+	default y
+	help
+	  Low latency ULL implementation that uses tailchaining instead of while
+	  loop to demux rx messages from LLL.
 
 endif # BT_LL_SW_SPLIT
 
@@ -561,6 +572,7 @@ if BT_CONN
 config BT_CTLR_FAST_ENC
 	bool "Fast Encryption Setup"
 	depends on BT_CTLR_LE_ENC
+	default y if BT_HCI_RAW
 	help
 	  Enable connection encryption setup in 3 connection intervals.
 	  Peripheral will respond to Encryption Request with Encryption Response
@@ -571,6 +583,19 @@ config BT_CTLR_FAST_ENC
 	  connection establishment.
 	  Maximum CPU time in Radio ISR will increase if this feature is
 	  selected.
+
+config BT_CTLR_LLID_DATA_START_EMPTY
+	bool "Handle zero length L2CAP start frame"
+	default y if BT_HCI_RAW
+	help
+	  Handle zero length L2CAP start frame.
+
+config BT_CTLR_RX_ENQUEUE_HOLD
+	bool "Procedure Complete after on-air instant"
+	default y if BT_HCI_RAW
+	help
+	  Hold enqueue of Procedure Complete events with instant until after the
+	  on-air instant is reached.
 
 config BT_CTLR_TX_RETRY_DISABLE
 	bool "Disable Tx Retry"
@@ -587,6 +612,7 @@ config BT_CTLR_TX_RETRY_DISABLE
 
 config BT_CTLR_CONN_RSSI
 	bool "Connection RSSI"
+	default y if BT_HCI_RAW
 	help
 	  Enable connection RSSI measurement.
 
@@ -616,6 +642,49 @@ config BT_CTLR_SCAN_INDICATION
 	help
 	  Generate events indicating on air scanner events.
 
+config BT_MAYFLY_YIELD_AFTER_CALL
+	bool "Yield from mayfly thread after first call"
+	default y
+	help
+	  Only process one mayfly callback per invocation (legacy behavior).
+	  If set to 'n', all pending mayflies for callee are executed before
+	  yielding
+
+config BT_TICKER_COMPATIBILITY_MODE
+	bool "Ticker compatibility mode"
+	default y if SOC_SERIES_NRF51X
+	help
+	  This option enables legacy ticker scheduling which defers overlapping
+	  ticker node timeouts and thereby prevents ticker interrupts during
+	  radio RX/TX. Enabling this option disables the ticker priority- and
+	  'must expire' features.
+
+config BT_CTLR_USER_EXT
+	prompt "Enable proprietary extensions in Controller"
+	depends on BT_LL_SW_SPLIT
+	bool
+	help
+	  Catch-all for enabling proprietary event types in Controller behavior.
+
+config BT_CTLR_USER_EVT_RANGE
+	int "Range of event constants reserved for proprietary event types"
+	depends on BT_CTLR_USER_EXT
+	default 5
+	range 0 10
+	help
+	  Number of event types reserved for proprietary use. The range
+	  is typically used when BT_CTLR_USER_EXT is in use.
+
+config BT_RX_USER_PDU_LEN
+	int "Maximum supported proprietary PDU buffer length"
+	depends on BT_CTLR_USER_EXT
+	default 2
+	range 2 255
+	help
+	  Maximum data size for each proprietary PDU. This size includes link layer
+	  header and payload. It does not account for HCI event headers as these
+	  PDUs are assumed to not go across HCI.
+
 endmenu
 
 comment "BLE Controller hardware configuration"
@@ -632,6 +701,8 @@ if BT_CTLR_GPIO_PA
 
 config BT_CTLR_GPIO_PA_PIN
 	int "Power Amplifier GPIO pin number"
+	range 0 47 if SOC_NRF52840
+	range 0 31
 	help
 	  GPIO Pin number connected to a Power Amplifier.
 
@@ -661,6 +732,8 @@ if BT_CTLR_GPIO_LNA
 
 config BT_CTLR_GPIO_LNA_PIN
 	int "Low Noise Amplifier GPIO pin number"
+	range 0 47 if SOC_NRF52840
+	range 0 31
 	help
 	  GPIO Pin number connected to a Low Noise Amplifier.
 
@@ -687,44 +760,10 @@ config BT_CTLR_PA_LNA_GPIOTE_CHAN
 	help
 	  Select the nRF5 GPIOTE channel to use for PA/LNA GPIO feature.
 
-if BT_LL_SW_SPLIT
-config BT_TMP
-	prompt "Temporary Role"
-	depends on BT_SHELL
-	bool
-	default y
-	help
-	  Temporary role to manual test ULL/LLL split architecture.
-
-if BT_TMP
-config BT_TMP_MAX
-	prompt "Temporary Role Max. Instances"
-	int
-	default 3
-	help
-	  Maximum supported Temporary role instances.
-
-config BT_TMP_TX_SIZE_MAX
-	prompt "Temporary Role Max. Tx buffer size"
-	int
-	default 10
-	help
-	  Temporary role's maximum transmit buffer size in bytes.
-
-config BT_TMP_TX_COUNT_MAX
-	prompt "Temporary Role Max. Tx buffers"
-	int
-	default 1
-	help
-	  Temporary role's maximum transmit buffer count.
-endif # BT_TMP
-endif # BT_LL_SW_SPLIT
-
 comment "BLE Controller debug configuration"
 
 config BT_CTLR_ASSERT_HANDLER
-	bool "Bluetooth Controller Assertion Handler"
-	depends on BT_HCI_RAW
+	bool "Application Defined Assertion Handler"
 	help
 	  This option enables an application-defined sink for the
 	  controller assertion mechanism. This must be defined in

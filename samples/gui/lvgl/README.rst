@@ -20,6 +20,16 @@ or a simulated display environment in a native Posix application:
 - :ref:`native_posix`
 - `SDL2`_
 
+or
+
+- :ref:`mimxrt1050_evk`
+- `RK043FN02H-CT`_
+
+or
+
+- :ref:`mimxrt1060_evk`
+- `RK043FN02H-CT`_
+
 Wiring
 ******
 
@@ -30,17 +40,17 @@ Adafruit TFT display.
 | | nrf52840  | | Adafruit TFT |
 | | Pin       | | Pin          |
 +=============+================+
-| P0.27       | SCK            |
+| P1.15       | SCK            |
 +-------------+----------------+
 | P0.31       | D/C            |
 +-------------+----------------+
 | P0.30       | RST            |
 +-------------+----------------+
-| P0.26       | MOSI           |
+| P1.13       | MOSI           |
 +-------------+----------------+
-| P0.29       | MISO           |
+| P1.14       | MISO           |
 +-------------+----------------+
-| P0.4        | NSS            |
+| P0.4        | CS             |
 +-------------+----------------+
 
 Building and Running
@@ -73,3 +83,4 @@ References
 .. _Adafruit 2.2 inch TFT Display: https://www.adafruit.com/product/1480
 .. _nRF52840 Preview development kit: http://www.nordicsemi.com/eng/Products/nRF52840-Preview-DK
 .. _SDL2: https://www.libsdl.org
+.. _RK043FN02H-CT: https://www.nxp.com/products/processors-and-microcontrollers/arm-based-processors-and-mcus/i.mx-applications-processors/i.mx-rt-series/4.3-lcd-panel:RK043FN02H-CT

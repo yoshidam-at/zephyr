@@ -23,8 +23,9 @@ config MULTITHREADING
 	  since the main thread cannot pend, it being the only thread in the
 	  system.
 
-	  Many drivers and subsystems will not work with this option; use only
-	  when you REALLY know what you are doing.
+	  Many drivers and subsystems will not work with this option
+	  set to 'n'; disable only when you REALLY know what you are
+	  doing.
 
 config NUM_COOP_PRIORITIES
 	int "Number of coop priorities" if MULTITHREADING
@@ -147,7 +148,7 @@ config SCHED_CPU_MASK
 config MAIN_STACK_SIZE
 	int "Size of stack for initialization and main thread"
 	default 2048 if COVERAGE_GCOV
-	default 512 if ZTEST
+	default 512 if ZTEST && !(RISCV || X86)
 	default 1024
 	help
 	  When the initialization is complete, the thread executing it then
@@ -158,9 +159,9 @@ config MAIN_STACK_SIZE
 
 config IDLE_STACK_SIZE
 	int "Size of stack for idle thread"
-	default 512 if COVERAGE_GCOV
+	default 2048 if COVERAGE_GCOV
 	default 1024 if XTENSA
-	default 512 if RISCV32
+	default 512 if RISCV
 	default 320 if ARC || (ARM && CPU_HAS_FPU)
 	default 256
 	help
@@ -195,7 +196,7 @@ config THREAD_USERSPACE_LOCAL_DATA
 config THREAD_USERSPACE_LOCAL_DATA_ARCH_DEFER_SETUP
 	bool
 	depends on THREAD_USERSPACE_LOCAL_DATA
-	default y if ARCH="arc"
+	default y if ARC || ARM
 
 config ERRNO
 	bool "Enable errno support"
@@ -206,14 +207,6 @@ config ERRNO
 	  include errno.h provided by the C library (libc) to use the errno
 	  symbol. The C library must access the per-thread errno via the
 	  _get_errno() symbol.
-
-config APPLICATION_MEMORY
-	bool "Split kernel and application memory"
-	help
-	  For all read-write memory sections (namely bss, noinit, data),
-	  separate them into application and kernel areas. The application area
-	  will have the project-level application objects and any libraries
-	  including the C library in it.
 
 choice SCHED_ALGORITHM
 	prompt "Scheduler priority queue algorithm"
@@ -339,23 +332,13 @@ config BOOT_DELAY
 	  achieved by waiting for DCD on the serial port--however, not
 	  all serial ports have DCD.
 
-config INT_LATENCY_BENCHMARK
-	bool "Interrupt latency metrics [EXPERIMENTAL]"
-	depends on ARCH="x86"
-	help
-	  This option enables the tracking of interrupt latency metrics;
-	  the exact set of metrics being tracked is board-dependent.
-	  Tracking begins when int_latency_init() is invoked by an application.
-	  The metrics are displayed (and a new sampling interval is started)
-	  each time int_latency_show() is called thereafter.
-
 config EXECUTION_BENCHMARKING
 	bool "Timing metrics"
 	help
 	  This option enables the tracking of various times inside the kernel
 	  the exact set of metrics being tracked is board-dependent.
 	  All timing measurements are enabled for X86 and ARM based architectures.
-	  In other architectures only a subset are enabled.
+	  In other architectures only a subset is enabled.
 
 config THREAD_MONITOR
 	bool "Thread monitoring [EXPERIMENTAL]"
@@ -368,11 +351,22 @@ config THREAD_NAME
 	bool "Thread name [EXPERIMENTAL]"
 	help
 	  This option allows to set a name for a thread.
+
+config THREAD_MAX_NAME_LEN
+	int "Max length of a thread name"
+	default 32
+	range 8 128
+	depends on THREAD_NAME
+	help
+	  Thread names get stored in the k_thread struct. Indicate the max
+	  name length, including the terminating NULL byte. Reduce this value
+	  to conserve memory.
 endmenu
 
 menu "Work Queue Options"
 config SYSTEM_WORKQUEUE_STACK_SIZE
 	int "System workqueue stack size"
+	default 4096 if COVERAGE
 	default 1024
 
 config SYSTEM_WORKQUEUE_PRIORITY
@@ -387,6 +381,7 @@ config SYSTEM_WORKQUEUE_PRIORITY
 
 config OFFLOAD_WORKQUEUE_STACK_SIZE
 	int "Workqueue stack size for thread offload requests"
+	default 4096 if COVERAGE
 	default 1024
 
 config OFFLOAD_WORKQUEUE_PRIORITY
@@ -493,6 +488,15 @@ config HEAP_MEM_POOL_SIZE
 	  dynamically allocating memory using k_malloc(). Supported values
 	  are: 256, 1024, 4096, and 16384. A size of zero means that no
 	  heap memory pool is defined.
+
+config HEAP_MEM_POOL_MIN_SIZE
+	int "The smallest blocks in the heap memory pool (in bytes)"
+	depends on HEAP_MEM_POOL_SIZE != 0
+	default 64
+	help
+	  This option specifies the size of the smallest block in the pool.
+	  Option must be a power of 2 and lower than or equal to the size
+	  of the entire pool.
 endmenu
 
 config ARCH_HAS_CUSTOM_SWAP_TO_MAIN
@@ -525,9 +529,11 @@ config ARCH_HAS_CUSTOM_BUSY_WAIT
 
 config SYS_CLOCK_TICKS_PER_SEC
 	int "System tick frequency (in ticks/second)"
+	default 100 if QEMU_TARGET || SOC_POSIX
+	default 10000 if TICKLESS_CAPABLE
 	default 100
 	help
-	  This option specifies the frequency of the system clock in Hz.
+	  This option specifies the nominal frequency of the system clock in Hz.
 
 	  Depending on the choice made, an amount of possibly expensive math must
 	  occur when converting ticks to milliseconds and vice-versa. Some values
@@ -553,6 +559,8 @@ config SYS_CLOCK_TICKS_PER_SEC
 	  granularity, not necessarily the number or frequency of
 	  interrupts delivered to the kernel.
 
+	  A value of 0 completely disables timer support in the kernel.
+
 config SYS_CLOCK_HW_CYCLES_PER_SEC
 	int "System clock's h/w timer frequency"
 	help
@@ -561,10 +569,13 @@ config SYS_CLOCK_HW_CYCLES_PER_SEC
 	  and the user should generally avoid modifying it via the menu configuration.
 
 config SYS_CLOCK_EXISTS
-	def_bool (SYS_CLOCK_TICKS_PER_SEC != 0)
-	# omit prompt to signify a "hidden" option
+	bool "System clock exists and is enabled"
+	default y
 	help
 	  This option specifies that the kernel lacks timer support.
+	  Some device configurations can eliminate significant code if
+	  this is disabled.  Obviously timeout-related APIs will not
+	  work.
 
 config XIP
 	bool "Execute in place"
@@ -611,18 +622,6 @@ endmenu
 
 menu "Security Options"
 
-config RETPOLINE
-	bool "Build with retpolines enabled"
-	default y if !X86_NO_SPECTRE_V2
-	# Currently only implemented for x86
-	depends on X86
-	help
-	  This is recommended on platforms with speculative executions, to protect
-	  against branch target injection (AKA Spectre-V2).  Full description of
-	  how retpolines work can be found here[1].
-
-	  [1] https://support.google.com/faqs/answer/7625886
-
 config STACK_CANARIES
 	bool "Compiler stack canaries"
 	help
@@ -655,6 +654,7 @@ config EXECUTE_XOR_WRITE
 config STACK_POINTER_RANDOM
 	int "Initial stack pointer randomization bounds"
 	depends on !STACK_GROWS_UP
+	depends on TEST_RANDOM_GENERATOR || ENTROPY_HAS_DRIVER
 	default 0
 	help
 	  This option performs a limited form of Address Space Layout
@@ -671,6 +671,17 @@ config STACK_POINTER_RANDOM
 	  This is currently only implemented for systems whose stack pointers
 	  grow towards lower memory addresses.
 
+config BOUNDS_CHECK_BYPASS_MITIGATION
+	bool "Enable bounds check bypass mitigations for speculative execution"
+	depends on USERSPACE
+	help
+	  Untrusted parameters from user mode may be used in system calls to
+	  index arrays during speculative execution, also known as the Spectre
+	  V1 vulnerability. When enabled, various macros defined in
+	  misc/speculation.h will insert fence instructions or other appropriate
+	  mitigations after bounds checking any array index parameters passed
+	  in from untrusted sources (user mode threads). When disabled, these
+	  macros do nothing.
 endmenu
 
 config MAX_DOMAIN_PARTITIONS
@@ -714,6 +725,17 @@ config MP_NUM_CPUS
 	help
 	  Number of multiprocessing-capable cores available to the
 	  multicpu API and SMP features.
+
+config SCHED_IPI_SUPPORTED
+	bool "Architecture supports broadcast interprocessor interrupts"
+	help
+	  True if the architecture supports a call to
+	  z_arch_sched_ipi() to broadcast an interrupt that will call
+	  z_sched_ipi() on other CPUs in the system.  Required for
+	  k_thread_abort() to operate with reasonable latency
+	  (otherwise we might have to wait for the other thread to
+	  take an interrupt, which can be arbitrarily far in the
+	  future).
 
 endmenu
 

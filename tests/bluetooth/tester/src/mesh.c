@@ -11,7 +11,7 @@
 #include <errno.h>
 #include <bluetooth/mesh.h>
 #include <bluetooth/testing.h>
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 
 #include <logging/log.h>
 #define LOG_MODULE_NAME bttester_mesh
@@ -104,7 +104,7 @@ static struct bt_mesh_cfg_srv cfg_srv = {
 	.relay = BT_MESH_RELAY_ENABLED,
 	.beacon = BT_MESH_BEACON_ENABLED,
 #if defined(CONFIG_BT_MESH_FRIEND)
-	.frnd = BT_MESH_FRIEND_DISABLED,
+	.frnd = BT_MESH_FRIEND_ENABLED,
 #else
 	.frnd = BT_MESH_FRIEND_NOT_SUPPORTED,
 #endif
@@ -612,12 +612,12 @@ static void health_generate_faults(u8_t *data, u16_t len)
 
 	rp = net_buf_simple_add(&buf, sizeof(*rp));
 
-	cur_faults_count = min(sizeof(cur_faults), sizeof(some_faults));
+	cur_faults_count = MIN(sizeof(cur_faults), sizeof(some_faults));
 	memcpy(cur_faults, some_faults, cur_faults_count);
 	net_buf_simple_add_mem(&buf, cur_faults, cur_faults_count);
 	rp->cur_faults_count = cur_faults_count;
 
-	reg_faults_count = min(sizeof(reg_faults), sizeof(some_faults));
+	reg_faults_count = MIN(sizeof(reg_faults), sizeof(some_faults));
 	memcpy(reg_faults, some_faults, reg_faults_count);
 	net_buf_simple_add_mem(&buf, reg_faults, reg_faults_count);
 	rp->reg_faults_count = reg_faults_count;

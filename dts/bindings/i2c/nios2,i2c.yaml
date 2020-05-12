@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: NIOS2 i2c
-version: 0.1
 
 description: >
     This binding gives a base representation of the NIOS2 i2c
@@ -18,15 +17,4 @@ properties:
       constraint: "nios2,i2c"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
-
-    interrupts:
-      type: array
-      category: required
-      description: required interrupts
-      generation: define
-
-...

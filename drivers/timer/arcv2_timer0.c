@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <drivers/system_timer.h>
+#include <drivers/timer/system_timer.h>
 #include <sys_clock.h>
 #include <spinlock.h>
 #include <arch/arc/v2/aux_regs.h>
@@ -13,8 +13,24 @@
 /*
  * note: This implementation assumes Timer0 is present. Be sure
  * to build the ARC CPU with Timer0.
+ *
+ * If secureshield is present and secure firmware is configured,
+ * use secure Timer 0
  */
 
+#ifdef CONFIG_ARC_SECURE_FIRMWARE
+
+#undef _ARC_V2_TMR0_COUNT
+#undef _ARC_V2_TMR0_CONTROL
+#undef _ARC_V2_TMR0_LIMIT
+#undef IRQ_TIMER0
+
+#define _ARC_V2_TMR0_COUNT _ARC_V2_S_TMR0_COUNT
+#define _ARC_V2_TMR0_CONTROL _ARC_V2_S_TMR0_CONTROL
+#define _ARC_V2_TMR0_LIMIT _ARC_V2_S_TMR0_LIMIT
+#define IRQ_TIMER0 IRQ_SEC_TIMER0
+
+#endif
 
 #define _ARC_V2_TMR_CTRL_IE 0x1 /* interrupt enable */
 #define _ARC_V2_TMR_CTRL_NH 0x2 /* count only while not halted */
@@ -25,7 +41,7 @@
 #define MIN_DELAY 512
 #define COUNTER_MAX 0xffffffff
 #define TIMER_STOPPED 0x0
-#define CYC_PER_TICK (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC	\
+#define CYC_PER_TICK (sys_clock_hw_cycles_per_sec()	\
 		      / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 
 #define MAX_TICKS ((COUNTER_MAX / CYC_PER_TICK) - 1)
@@ -35,10 +51,16 @@
 
 static struct k_spinlock lock;
 
+
+#ifdef CONFIG_SMP
+volatile static u64_t last_time;
+volatile static u64_t start_time;
+
+#else
 static u32_t last_load;
 
 static u32_t cycle_count;
-
+#endif
 
 /**
  *
@@ -48,7 +70,7 @@ static u32_t cycle_count;
  */
 static ALWAYS_INLINE u32_t timer0_count_register_get(void)
 {
-	return _arc_v2_aux_reg_read(_ARC_V2_TMR0_COUNT);
+	return z_arc_v2_aux_reg_read(_ARC_V2_TMR0_COUNT);
 }
 
 /**
@@ -59,7 +81,7 @@ static ALWAYS_INLINE u32_t timer0_count_register_get(void)
  */
 static ALWAYS_INLINE void timer0_count_register_set(u32_t value)
 {
-	_arc_v2_aux_reg_write(_ARC_V2_TMR0_COUNT, value);
+	z_arc_v2_aux_reg_write(_ARC_V2_TMR0_COUNT, value);
 }
 
 /**
@@ -70,7 +92,7 @@ static ALWAYS_INLINE void timer0_count_register_set(u32_t value)
  */
 static ALWAYS_INLINE u32_t timer0_control_register_get(void)
 {
-	return _arc_v2_aux_reg_read(_ARC_V2_TMR0_CONTROL);
+	return z_arc_v2_aux_reg_read(_ARC_V2_TMR0_CONTROL);
 }
 
 /**
@@ -81,7 +103,7 @@ static ALWAYS_INLINE u32_t timer0_control_register_get(void)
  */
 static ALWAYS_INLINE void timer0_control_register_set(u32_t value)
 {
-	_arc_v2_aux_reg_write(_ARC_V2_TMR0_CONTROL, value);
+	z_arc_v2_aux_reg_write(_ARC_V2_TMR0_CONTROL, value);
 }
 
 /**
@@ -92,7 +114,7 @@ static ALWAYS_INLINE void timer0_control_register_set(u32_t value)
  */
 static ALWAYS_INLINE u32_t timer0_limit_register_get(void)
 {
-	return _arc_v2_aux_reg_read(_ARC_V2_TMR0_LIMIT);
+	return z_arc_v2_aux_reg_read(_ARC_V2_TMR0_LIMIT);
 }
 
 /**
@@ -103,9 +125,10 @@ static ALWAYS_INLINE u32_t timer0_limit_register_get(void)
  */
 static ALWAYS_INLINE void timer0_limit_register_set(u32_t count)
 {
-	_arc_v2_aux_reg_write(_ARC_V2_TMR0_LIMIT, count);
+	z_arc_v2_aux_reg_write(_ARC_V2_TMR0_LIMIT, count);
 }
 
+#ifndef CONFIG_SMP
 static u32_t elapsed(void)
 {
 	u32_t val, ov, ctrl;
@@ -118,6 +141,7 @@ static u32_t elapsed(void)
 	ov = (ctrl & _ARC_V2_TMR_CTRL_IP) ? last_load : 0;
 	return val + ov;
 }
+#endif
 
 /**
  *
@@ -129,7 +153,7 @@ static u32_t elapsed(void)
  *
  * @return N/A
  */
-static void _timer_int_handler(void *unused)
+static void timer_int_handler(void *unused)
 {
 	ARG_UNUSED(unused);
 	u32_t dticks;
@@ -137,10 +161,25 @@ static void _timer_int_handler(void *unused)
 	/* clear the interrupt by writing 0 to IP bit of the control register */
 	timer0_control_register_set(_ARC_V2_TMR_CTRL_NH | _ARC_V2_TMR_CTRL_IE);
 
+#ifdef CONFIG_SMP
+	u64_t curr_time;
+	k_spinlock_key_t key;
+
+	key = k_spin_lock(&lock);
+	/* gfrc is the wall clock */
+	curr_time = z_arc_connect_gfrc_read();
+
+	dticks = (curr_time - last_time) / CYC_PER_TICK;
+	last_time = curr_time;
+
+	k_spin_unlock(&lock, key);
+
+	z_clock_announce(dticks);
+#else
 	cycle_count += last_load;
 	dticks = last_load / CYC_PER_TICK;
-
 	z_clock_announce(TICKLESS ? dticks : 1);
+#endif
 
 }
 
@@ -161,12 +200,24 @@ int z_clock_driver_init(struct device *device)
 	/* ensure that the timer will not generate interrupts */
 	timer0_control_register_set(0);
 
+#ifdef CONFIG_SMP
+	IRQ_CONNECT(IRQ_TIMER0, CONFIG_ARCV2_TIMER_IRQ_PRIORITY,
+		    timer_int_handler, NULL, 0);
+
+	timer0_limit_register_set(CYC_PER_TICK - 1);
+	last_time = z_arc_connect_gfrc_read();
+	start_time = last_time;
+#else
 	last_load = CYC_PER_TICK;
 
 	IRQ_CONNECT(IRQ_TIMER0, CONFIG_ARCV2_TIMER_IRQ_PRIORITY,
-		    _timer_int_handler, NULL, 0);
+		    timer_int_handler, NULL, 0);
 
 	timer0_limit_register_set(last_load - 1);
+#ifdef CONFIG_BOOT_TIME_MEASUREMENT
+	cycle_count = timer0_count_register_get();
+#endif
+#endif
 	timer0_count_register_set(0);
 	timer0_control_register_set(_ARC_V2_TMR_CTRL_NH | _ARC_V2_TMR_CTRL_IE);
 
@@ -183,6 +234,33 @@ void z_clock_set_timeout(s32_t ticks, bool idle)
 	 * then shut off the counter. (Note: we can assume if idle==true
 	 * that interrupts are already disabled)
 	 */
+#ifdef CONFIG_SMP
+	if (IS_ENABLED(CONFIG_TICKLESS_IDLE) && idle && ticks == K_FOREVER) {
+		timer0_control_register_set(0);
+		timer0_count_register_set(0);
+		timer0_limit_register_set(0);
+		return;
+	}
+
+#if defined(CONFIG_TICKLESS_KERNEL)
+	u32_t delay;
+	u32_t key;
+
+	ticks = MIN(MAX_TICKS, MAX(ticks - 1, 0));
+
+	/* Desired delay in the future */
+	delay = (ticks == 0) ? CYC_PER_TICK : ticks * CYC_PER_TICK;
+
+	key = z_arch_irq_lock();
+
+	timer0_limit_register_set(delay - 1);
+	timer0_count_register_set(0);
+	timer0_control_register_set(_ARC_V2_TMR_CTRL_NH |
+						_ARC_V2_TMR_CTRL_IE);
+
+	z_arch_irq_unlock(key);
+#endif
+#else
 	if (IS_ENABLED(CONFIG_TICKLESS_IDLE) && idle && ticks == K_FOREVER) {
 		timer0_control_register_set(0);
 		timer0_count_register_set(0);
@@ -194,7 +272,7 @@ void z_clock_set_timeout(s32_t ticks, bool idle)
 #if defined(CONFIG_TICKLESS_KERNEL)
 	u32_t delay;
 
-	ticks = min(MAX_TICKS, max(ticks - 1, 0));
+	ticks = MIN(MAX_TICKS, MAX(ticks - 1, 0));
 
 	/* Desired delay in the future */
 	delay = (ticks == 0) ? MIN_DELAY : ticks * CYC_PER_TICK;
@@ -218,6 +296,7 @@ void z_clock_set_timeout(s32_t ticks, bool idle)
 
 	k_spin_unlock(&lock, key);
 #endif
+#endif
 }
 
 u32_t z_clock_elapsed(void)
@@ -226,20 +305,31 @@ u32_t z_clock_elapsed(void)
 		return 0;
 	}
 
+	u32_t cyc;
 	k_spinlock_key_t key = k_spin_lock(&lock);
-	u32_t cyc = elapsed();
+
+#ifdef CONFIG_SMP
+	cyc = (z_arc_connect_gfrc_read() - last_time) / CYC_PER_TICK;
+#else
+	cyc = elapsed() / CYC_PER_TICK;
+#endif
 
 	k_spin_unlock(&lock, key);
-	return cyc / CYC_PER_TICK;
+
+	return cyc;
 }
 
-u32_t _timer_cycle_get_32(void)
+u32_t z_timer_cycle_get_32(void)
 {
+#ifdef CONFIG_SMP
+	return z_arc_connect_gfrc_read() - start_time;
+#else
 	k_spinlock_key_t key = k_spin_lock(&lock);
 	u32_t ret = elapsed() + cycle_count;
 
 	k_spin_unlock(&lock, key);
 	return ret;
+#endif
 }
 
 /**
@@ -269,3 +359,18 @@ void sys_clock_disable(void)
 
 	irq_disable(IRQ_TIMER0);
 }
+
+
+#ifdef CONFIG_SMP
+void smp_timer_init(void)
+{
+	/* set the initial status of timer0 of each slave core
+	 */
+	timer0_control_register_set(0);
+	timer0_count_register_set(0);
+	timer0_limit_register_set(0);
+
+	z_irq_priority_set(IRQ_TIMER0, CONFIG_ARCV2_TIMER_IRQ_PRIORITY, 0);
+	irq_enable(IRQ_TIMER0);
+}
+#endif

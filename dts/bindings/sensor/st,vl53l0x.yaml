@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: STMicroelectronics MEMS sensors VL53L0X
-version: 0.1
 
 description: >
     This binding gives a base representation of VL53L0X Time Of Flight sensor
@@ -16,5 +15,3 @@ inherits:
 properties:
     compatible:
       constraint: "st,vl53l0x"
-
-...

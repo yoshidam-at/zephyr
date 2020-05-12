@@ -10,7 +10,7 @@
 
 #include <errno.h>
 #include <bluetooth/l2cap.h>
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 
 #include <logging/log.h>
 #define LOG_MODULE_NAME bttester_l2cap
@@ -297,7 +297,7 @@ static void listen(u8_t *data, u16_t len)
 	server->psm = cmd->psm;
 
 	if (bt_l2cap_server_register(server) < 0) {
-		server->psm = 0;
+		server->psm = 0U;
 		goto fail;
 	}
 

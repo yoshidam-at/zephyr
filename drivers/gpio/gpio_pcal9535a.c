@@ -13,9 +13,9 @@
 #include <kernel.h>
 #include <device.h>
 #include <init.h>
-#include <misc/util.h>
-#include <gpio.h>
-#include <i2c.h>
+#include <sys/util.h>
+#include <drivers/gpio.h>
+#include <drivers/i2c.h>
 
 #include "gpio_pcal9535a.h"
 
@@ -54,16 +54,17 @@ LOG_MODULE_REGISTER(gpio_pcal9535a);
  * @param dev Device struct.
  * @return 1 if I2C master is identified, 0 if not.
  */
-static inline int _has_i2c_master(struct device *dev)
+static inline int has_i2c_master(struct device *dev)
 {
 	struct gpio_pcal9535a_drv_data * const drv_data =
 		(struct gpio_pcal9535a_drv_data * const)dev->driver_data;
 	struct device * const i2c_master = drv_data->i2c_master;
 
-	if (i2c_master)
+	if (i2c_master) {
 		return 1;
-	else
+	} else {
 		return 0;
+	}
 }
 
 /**
@@ -77,7 +78,7 @@ static inline int _has_i2c_master(struct device *dev)
  *
  * @return 0 if successful, failed otherwise.
  */
-static int _read_port_regs(struct device *dev, u8_t reg,
+static int read_port_regs(struct device *dev, u8_t reg,
 			   union gpio_pcal9535a_port_data *buf)
 {
 	const struct gpio_pcal9535a_config * const config =
@@ -113,7 +114,7 @@ error:
  *
  * @return 0 if successful, failed otherwise.
  */
-static int _write_port_regs(struct device *dev, u8_t reg,
+static int write_port_regs(struct device *dev, u8_t reg,
 			    union gpio_pcal9535a_port_data *buf)
 {
 	const struct gpio_pcal9535a_config * const config =
@@ -147,7 +148,7 @@ static int _write_port_regs(struct device *dev, u8_t reg,
  *
  * @return 0 if successful, failed otherwise
  */
-static int _setup_pin_dir(struct device *dev, int access_op,
+static int setup_pin_dir(struct device *dev, int access_op,
 			  u32_t pin, int flags)
 {
 	struct gpio_pcal9535a_drv_data * const drv_data =
@@ -183,7 +184,7 @@ static int _setup_pin_dir(struct device *dev, int access_op,
 		goto done;
 	}
 
-	ret = _write_port_regs(dev, REG_CONF_PORT0, port);
+	ret = write_port_regs(dev, REG_CONF_PORT0, port);
 
 done:
 	return ret;
@@ -199,7 +200,7 @@ done:
  *
  * @return 0 if successful, failed otherwise
  */
-static int _setup_pin_pullupdown(struct device *dev, int access_op,
+static int setup_pin_pullupdown(struct device *dev, int access_op,
 				 u32_t pin, int flags)
 {
 	struct gpio_pcal9535a_drv_data * const drv_data =
@@ -244,7 +245,7 @@ static int _setup_pin_pullupdown(struct device *dev, int access_op,
 		goto done;
 	}
 
-	ret = _write_port_regs(dev, REG_PUD_SEL_PORT0, port);
+	ret = write_port_regs(dev, REG_PUD_SEL_PORT0, port);
 	if (ret) {
 		goto done;
 	}
@@ -276,7 +277,7 @@ en_dis:
 		goto done;
 	}
 
-	ret = _write_port_regs(dev, REG_PUD_EN_PORT0, port);
+	ret = write_port_regs(dev, REG_PUD_EN_PORT0, port);
 
 done:
 	return ret;
@@ -292,7 +293,7 @@ done:
  *
  * @return 0 if successful, failed otherwise
  */
-static int _setup_pin_polarity(struct device *dev, int access_op,
+static int setup_pin_polarity(struct device *dev, int access_op,
 			       u32_t pin, int flags)
 {
 	struct gpio_pcal9535a_drv_data * const drv_data =
@@ -328,7 +329,7 @@ static int _setup_pin_polarity(struct device *dev, int access_op,
 		goto done;
 	}
 
-	ret = _write_port_regs(dev, REG_POL_INV_PORT0, port);
+	ret = write_port_regs(dev, REG_POL_INV_PORT0, port);
 	if (!ret) {
 		drv_data->out_pol_inv = port->all;
 	}
@@ -362,25 +363,25 @@ static int gpio_pcal9535a_config(struct device *dev, int access_op,
 		return -ENOTSUP;
 	}
 
-	if (!_has_i2c_master(dev)) {
+	if (!has_i2c_master(dev)) {
 		return -EINVAL;
 	}
 
-	ret = _setup_pin_dir(dev, access_op, pin, flags);
+	ret = setup_pin_dir(dev, access_op, pin, flags);
 	if (ret) {
 		LOG_ERR("PCAL9535A[0x%X]: error setting pin direction (%d)",
 			i2c_addr, ret);
 		goto done;
 	}
 
-	ret = _setup_pin_polarity(dev, access_op, pin, flags);
+	ret = setup_pin_polarity(dev, access_op, pin, flags);
 	if (ret) {
 		LOG_ERR("PCAL9535A[0x%X]: error setting pin polarity (%d)",
 			i2c_addr, ret);
 		goto done;
 	}
 
-	ret = _setup_pin_pullupdown(dev, access_op, pin, flags);
+	ret = setup_pin_pullupdown(dev, access_op, pin, flags);
 	if (ret) {
 		LOG_ERR("PCAL9535A[0x%X]: error setting pin pull up/down "
 			"(%d)", i2c_addr, ret);
@@ -411,7 +412,7 @@ static int gpio_pcal9535a_write(struct device *dev, int access_op,
 	u16_t new_value;
 	int ret;
 
-	if (!_has_i2c_master(dev)) {
+	if (!has_i2c_master(dev)) {
 		return -EINVAL;
 	}
 
@@ -445,7 +446,7 @@ static int gpio_pcal9535a_write(struct device *dev, int access_op,
 		goto done;
 	}
 
-	ret = _write_port_regs(dev, REG_OUTPUT_PORT0, port);
+	ret = write_port_regs(dev, REG_OUTPUT_PORT0, port);
 
 done:
 	return ret;
@@ -467,11 +468,11 @@ static int gpio_pcal9535a_read(struct device *dev, int access_op,
 	union gpio_pcal9535a_port_data buf;
 	int ret;
 
-	if (!_has_i2c_master(dev)) {
+	if (!has_i2c_master(dev)) {
 		return -EINVAL;
 	}
 
-	ret = _read_port_regs(dev, REG_INPUT_PORT0, &buf);
+	ret = read_port_regs(dev, REG_INPUT_PORT0, &buf);
 	if (ret != 0) {
 		goto done;
 	}

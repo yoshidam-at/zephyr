@@ -20,7 +20,7 @@
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <device.h>
-#include <misc/util.h>
+#include <sys/util.h>
 #include <kernel.h>
 #include <net/net_pkt.h>
 #include <net/net_if.h>
@@ -34,6 +34,10 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include "fsl_enet.h"
 #include "fsl_phy.h"
+
+#define FREESCALE_OUI_B0 0x00
+#define FREESCALE_OUI_B1 0x04
+#define FREESCALE_OUI_B2 0x9f
 
 enum eth_mcux_phy_state {
 	eth_mcux_phy_state_initial,
@@ -102,7 +106,7 @@ struct eth_context {
 	 * Note that we do not copy FCS into this buffer thus the
 	 * size is 1514 bytes.
 	 */
-	u8_t frame_buf[1500 + 14]; /* Max MTU + ethernet header size */
+	u8_t frame_buf[NET_ETH_MAX_FRAME_SIZE]; /* Max MTU + ethernet header */
 };
 
 static void eth_0_config_func(void);
@@ -216,7 +220,11 @@ static void eth_mcux_phy_start(struct eth_context *context)
 		ENET_StartSMIWrite(ENET, phy_addr, PHY_BASICCONTROL_REG,
 			   kENET_MiiWriteValidFrame,
 			   PHY_BCTL_RESET_MASK);
+#ifdef CONFIG_SOC_SERIES_IMX_RT
 		context->phy_state = eth_mcux_phy_state_initial;
+#else
+		context->phy_state = eth_mcux_phy_state_reset;
+#endif
 		break;
 	case eth_mcux_phy_state_reset:
 		eth_mcux_phy_enter_reset(context);
@@ -497,14 +505,12 @@ static int eth_tx(struct device *dev, struct net_pkt *pkt)
 	bool timestamped_frame;
 #endif
 
-	k_sem_take(&context->tx_buf_sem, K_FOREVER);
-
 	/* As context->frame_buf is shared resource used by both eth_tx
 	 * and eth_rx, we need to protect it with irq_lock.
 	 */
 	imask = irq_lock();
 
-	if (net_pkt_read_new(pkt, context->frame_buf, total_len)) {
+	if (net_pkt_read(pkt, context->frame_buf, total_len)) {
 		irq_unlock(imask);
 		return -EIO;
 	}
@@ -545,6 +551,8 @@ static int eth_tx(struct device *dev, struct net_pkt *pkt)
 		LOG_ERR("ENET_SendFrame error: %d", (int)status);
 		return -1;
 	}
+
+	k_sem_take(&context->tx_buf_sem, K_FOREVER);
 
 	return 0;
 }
@@ -600,7 +608,7 @@ static void eth_rx(struct device *iface)
 		goto error;
 	}
 
-	if (net_pkt_write_new(pkt, context->frame_buf, frame_length)) {
+	if (net_pkt_write(pkt, context->frame_buf, frame_length)) {
 		irq_unlock(imask);
 		LOG_ERR("Unable to write frame into the pkt");
 		net_pkt_unref(pkt);
@@ -787,6 +795,10 @@ static int eth_0_init(struct device *dev)
 #if defined(CONFIG_PTP_CLOCK_MCUX)
 	u8_t ptp_multicast[6] = { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E };
 #endif
+#if defined(CONFIG_MDNS_RESPONDER) || defined(CONFIG_MDNS_RESOLVER)
+	/* standard multicast MAC address */
+	u8_t mdns_multicast[6] = { 0x01, 0x00, 0x5E, 0x00, 0x00, 0xFB };
+#endif
 
 #if defined(CONFIG_PTP_CLOCK_MCUX)
 	ts_tx_rd = 0;
@@ -795,7 +807,7 @@ static int eth_0_init(struct device *dev)
 #endif
 
 	k_sem_init(&context->tx_buf_sem,
-		   CONFIG_ETH_MCUX_TX_BUFFERS, CONFIG_ETH_MCUX_TX_BUFFERS);
+		   0, CONFIG_ETH_MCUX_TX_BUFFERS);
 	k_work_init(&context->phy_work, eth_mcux_phy_work);
 	k_delayed_work_init(&context->delayed_phy_work,
 			    eth_mcux_delayed_phy_work);
@@ -813,6 +825,12 @@ static int eth_0_init(struct device *dev)
 	enet_config.macSpecialConfig |= kENET_ControlPromiscuousEnable;
 #endif
 
+	/* Initialize/override OUI which may not be correct in
+	 * devicetree.
+	 */
+	context->mac_addr[0] = FREESCALE_OUI_B0;
+	context->mac_addr[1] = FREESCALE_OUI_B1;
+	context->mac_addr[2] = FREESCALE_OUI_B2;
 #if defined(CONFIG_ETH_MCUX_0_UNIQUE_MAC) || \
     defined(CONFIG_ETH_MCUX_0_RANDOM_MAC)
 	generate_mac(context->mac_addr);
@@ -844,6 +862,9 @@ static int eth_0_init(struct device *dev)
 	ENET_Ptp1588Configure(ENET, &context->enet_handle,
 			      &context->ptp_config);
 #endif
+#if defined(CONFIG_MDNS_RESPONDER) || defined(CONFIG_MDNS_RESOLVER)
+	ENET_AddMulticastGroup(ENET, mdns_multicast);
+#endif
 
 	ENET_SetSMI(ENET, sys_clock, false);
 
@@ -853,7 +874,6 @@ static int eth_0_init(struct device *dev)
 		context->mac_addr[4], context->mac_addr[5]);
 
 	ENET_SetCallback(&context->enet_handle, eth_callback, dev);
-	eth_0_config_func();
 
 	eth_mcux_phy_start(context);
 
@@ -896,6 +916,9 @@ static void eth_iface_init(struct net_if *iface)
 	context->iface = iface;
 
 	ethernet_init(iface);
+	net_if_flag_set(iface, NET_IF_NO_AUTO_START);
+
+	eth_0_config_func();
 }
 
 static enum ethernet_hw_caps eth_mcux_get_capabilities(struct device *dev)
@@ -937,7 +960,7 @@ static void eth_mcux_ptp_isr(void *p)
 }
 #endif
 
-#if defined(ETH_IRQ_COMMON)
+#if defined(DT_IRQ_ETH_COMMON)
 static void eth_mcux_dispacher_isr(void *p)
 {
 	struct device *dev = p;
@@ -960,7 +983,7 @@ static void eth_mcux_dispacher_isr(void *p)
 }
 #endif
 
-#if defined(ETH_IRQ_RX)
+#if defined(DT_IRQ_ETH_RX)
 static void eth_mcux_rx_isr(void *p)
 {
 	struct device *dev = p;
@@ -970,7 +993,7 @@ static void eth_mcux_rx_isr(void *p)
 }
 #endif
 
-#if defined(ETH_IRQ_TX)
+#if defined(DT_IRQ_ETH_TX)
 static void eth_mcux_tx_isr(void *p)
 {
 	struct device *dev = p;
@@ -980,7 +1003,7 @@ static void eth_mcux_tx_isr(void *p)
 }
 #endif
 
-#if defined(ETH_IRQ_ERR_MISC)
+#if defined(DT_IRQ_ETH_ERR_MISC)
 static void eth_mcux_error_isr(void *p)
 {
 	struct device *dev = p;
@@ -997,44 +1020,36 @@ static void eth_mcux_error_isr(void *p)
 static struct eth_context eth_0_context = {
 	.phy_duplex = kPHY_FullDuplex,
 	.phy_speed = kPHY_Speed100M,
-	.mac_addr = {
-		/* Freescale's OUI */
-		0x00,
-		0x04,
-		0x9f,
 #if defined(CONFIG_ETH_MCUX_0_MANUAL_MAC)
-		DT_ETH_MCUX_0_MAC3,
-		DT_ETH_MCUX_0_MAC4,
-		DT_ETH_MCUX_0_MAC5
+	.mac_addr = DT_ETH_MCUX_0_MAC,
 #endif
-	}
 };
 
 ETH_NET_DEVICE_INIT(eth_mcux_0, DT_ETH_MCUX_0_NAME, eth_0_init,
 		    &eth_0_context, NULL, CONFIG_ETH_INIT_PRIORITY,
-		    &api_funcs, 1500);
+		    &api_funcs, NET_ETH_MTU);
 
 static void eth_0_config_func(void)
 {
-#if defined(ETH_IRQ_RX)
+#if defined(DT_IRQ_ETH_RX)
 	IRQ_CONNECT(DT_IRQ_ETH_RX, DT_ETH_MCUX_0_IRQ_PRI,
 		    eth_mcux_rx_isr, DEVICE_GET(eth_mcux_0), 0);
 	irq_enable(DT_IRQ_ETH_RX);
 #endif
 
-#if defined(ETH_IRQ_TX)
+#if defined(DT_IRQ_ETH_TX)
 	IRQ_CONNECT(DT_IRQ_ETH_TX, DT_ETH_MCUX_0_IRQ_PRI,
 		    eth_mcux_tx_isr, DEVICE_GET(eth_mcux_0), 0);
 	irq_enable(DT_IRQ_ETH_TX);
 #endif
 
-#if defined(ETH_IRQ_ERR_MISC)
+#if defined(DT_IRQ_ETH_ERR_MISC)
 	IRQ_CONNECT(DT_IRQ_ETH_ERR_MISC, DT_ETH_MCUX_0_IRQ_PRI,
 		    eth_mcux_error_isr, DEVICE_GET(eth_mcux_0), 0);
 	irq_enable(DT_IRQ_ETH_ERR_MISC);
 #endif
 
-#if defined(ETH_IRQ_COMMON)
+#if defined(DT_IRQ_ETH_COMMON)
 	IRQ_CONNECT(DT_IRQ_ETH_COMMON, DT_ETH_MCUX_0_IRQ_PRI,
 		    eth_mcux_dispacher_isr, DEVICE_GET(eth_mcux_0), 0);
 	irq_enable(DT_IRQ_ETH_COMMON);

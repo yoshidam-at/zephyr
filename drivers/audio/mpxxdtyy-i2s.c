@@ -5,9 +5,9 @@
  */
 
 #include "mpxxdtyy.h"
-#include <i2s.h>
+#include <drivers/i2s.h>
 
-#define LOG_LEVEL CONFIG_MPXXDTYY_LOG_LEVEL
+#define LOG_LEVEL CONFIG_AUDIO_DMIC_LOG_LEVEL
 #include <logging/log.h>
 LOG_MODULE_DECLARE(mpxxdtyy);
 
@@ -25,7 +25,7 @@ int mpxxdtyy_i2s_read(struct device *dev, u8_t stream, void **buffer,
 	struct mpxxdtyy_data *const data = DEV_DATA(dev);
 	void *pdm_block, *pcm_block;
 	size_t pdm_size;
-	TPDMFilter_InitStruct *pdm_filter = &data->pdm_filter;
+	TPDMFilter_InitStruct *pdm_filter = &data->pdm_filter[0];
 
 	ret = i2s_read(data->comm_master, &pdm_block, &pdm_size);
 	if (ret != 0) {
@@ -112,7 +112,7 @@ int mpxxdtyy_i2s_configure(struct device *dev, struct dmic_cfg *cfg)
 	}
 
 	factor = sw_filter_lib_init(dev, cfg);
-	if (factor == 0) {
+	if (factor == 0U) {
 		return -EINVAL;
 	}
 

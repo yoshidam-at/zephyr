@@ -1,0 +1,29 @@
+#
+# Copyright (c) 2019 Vestas Wind Systems A/S
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+title: NXP Kinetis PCC (Peripheral Clock Controller)
+
+description: >
+    This is a representation of the NXP Kinetis PCC IP node
+
+inherits:
+    !include [clock.yaml, base.yaml]
+
+properties:
+    compatible:
+      constraint: "nxp,kinetis-pcc"
+
+    reg:
+      category: required
+
+    label:
+      category: required
+
+    "#clock-cells":
+      description: should be 1.
+
+"#cells":
+  - name

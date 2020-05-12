@@ -5,10 +5,10 @@
  */
 
 #include <device.h>
-#include <i2c.h>
+#include <drivers/i2c.h>
 #include <kernel.h>
-#include <sensor.h>
-#include <misc/__assert.h>
+#include <drivers/sensor.h>
+#include <sys/__assert.h>
 #include <logging/log.h>
 
 #include "sht3xd.h"
@@ -90,20 +90,8 @@ static int sht3xd_sample_fetch(struct device *dev, enum sensor_channel chan)
 		SHT3XD_CMD_FETCH & 0xFF
 	};
 
-	struct i2c_msg msgs[2] = {
-		{
-			.buf = tx_buf,
-			.len = sizeof(tx_buf),
-			.flags = I2C_MSG_WRITE | I2C_MSG_RESTART,
-		},
-		{
-			.buf = rx_buf,
-			.len = sizeof(rx_buf),
-			.flags = I2C_MSG_READ | I2C_MSG_STOP,
-		},
-	};
-
-	if (i2c_transfer(i2c, msgs, 2, address) < 0) {
+	if (i2c_write_read(i2c, address, tx_buf, sizeof(tx_buf),
+			   rx_buf, sizeof(rx_buf)) < 0) {
 		LOG_DBG("Failed to read data sample!");
 		return -EIO;
 	}
@@ -139,15 +127,15 @@ static int sht3xd_channel_get(struct device *dev,
 	 */
 	if (chan == SENSOR_CHAN_AMBIENT_TEMP) {
 		/* val = -45 + 175 * sample / (2^16 -1) */
-		tmp = 175 * (u64_t)data->t_sample;
+		tmp = (u64_t)data->t_sample * 175U;
 		val->val1 = (s32_t)(tmp / 0xFFFF) - 45;
-		val->val2 = (1000000 * (tmp % 0xFFFF)) / 0xFFFF;
+		val->val2 = ((tmp % 0xFFFF) * 1000000U) / 0xFFFF;
 	} else if (chan == SENSOR_CHAN_HUMIDITY) {
 		/* val = 100 * sample / (2^16 -1) */
-		u32_t tmp2 = 100 * (u32_t)data->rh_sample;
+		u32_t tmp2 = (u32_t)data->rh_sample * 100U;
 		val->val1 = tmp2 / 0xFFFF;
 		/* x * 100000 / 65536 == x * 15625 / 1024 */
-		val->val2 = (tmp2 % 0xFFFF) * 15625 / 1024;
+		val->val2 = (tmp2 % 0xFFFF) * 15625U / 1024;
 	} else {
 		return -ENOTSUP;
 	}
@@ -213,17 +201,17 @@ static int sht3xd_init(struct device *dev)
 
 struct sht3xd_data sht3xd0_driver;
 static const struct sht3xd_config sht3xd0_cfg = {
-	.bus_name = DT_SENSIRION_SHT3XD_0_BUS_NAME,
+	.bus_name = DT_INST_0_SENSIRION_SHT3XD_BUS_NAME,
 #ifdef CONFIG_SHT3XD_TRIGGER
-	.alert_gpio_name = DT_SENSIRION_SHT3XD_0_ALERT_GPIOS_CONTROLLER,
+	.alert_gpio_name = DT_INST_0_SENSIRION_SHT3XD_ALERT_GPIOS_CONTROLLER,
 #endif
-	.base_address = DT_SENSIRION_SHT3XD_0_BASE_ADDRESS,
+	.base_address = DT_INST_0_SENSIRION_SHT3XD_BASE_ADDRESS,
 #ifdef CONFIG_SHT3XD_TRIGGER
-	.alert_pin = DT_SENSIRION_SHT3XD_0_ALERT_GPIOS_PIN,
+	.alert_pin = DT_INST_0_SENSIRION_SHT3XD_ALERT_GPIOS_PIN,
 #endif
 };
 
-DEVICE_AND_API_INIT(sht3xd0, DT_SENSIRION_SHT3XD_0_LABEL,
+DEVICE_AND_API_INIT(sht3xd0, DT_INST_0_SENSIRION_SHT3XD_LABEL,
 		    sht3xd_init, &sht3xd0_driver, &sht3xd0_cfg,
 		    POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,
 		    &sht3xd_driver_api);

@@ -5,9 +5,9 @@
  */
 
 #include <device.h>
-#include <i2c.h>
-#include <sensor.h>
-#include <misc/__assert.h>
+#include <drivers/i2c.h>
+#include <drivers/sensor.h>
+#include <sys/__assert.h>
 #include <logging/log.h>
 
 #include "max44009.h"
@@ -156,8 +156,8 @@ static int max44009_channel_get(struct device *dev, enum sensor_channel chan,
 	uval = uval << (drv_data->sample >> MAX44009_SAMPLE_EXPONENT_SHIFT);
 
 	/* lux is the integer of sample output multiplied by 0.045. */
-	val->val1 = (uval * 45) / 1000;
-	val->val2 = ((uval * 45) % 1000) * 1000;
+	val->val1 = (uval * 45U) / 1000;
+	val->val2 = ((uval * 45U) % 1000) * 1000U;
 
 	return 0;
 }

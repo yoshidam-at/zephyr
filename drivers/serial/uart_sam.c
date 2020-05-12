@@ -13,11 +13,11 @@
  */
 
 #include <errno.h>
-#include <misc/__assert.h>
+#include <sys/__assert.h>
 #include <device.h>
 #include <init.h>
 #include <soc.h>
-#include <uart.h>
+#include <drivers/uart.h>
 
 /*
  * Verify Kconfig configuration
@@ -158,8 +158,8 @@ static void uart_sam_poll_out(struct device *dev, unsigned char c)
 	Uart *const uart = DEV_CFG(dev)->regs;
 
 	/* Wait for transmitter to be ready */
-	while (!(uart->UART_SR & UART_SR_TXRDY))
-		;
+	while (!(uart->UART_SR & UART_SR_TXRDY)) {
+	}
 
 	/* send a character */
 	uart->UART_THR = (u32_t)c;
@@ -192,10 +192,10 @@ static int baudrate_set(Uart *const uart, u32_t baudrate,
 
 	__ASSERT(baudrate,
 		 "baud rate has to be bigger than 0");
-	__ASSERT(mck_freq_hz/16 >= baudrate,
+	__ASSERT(mck_freq_hz/16U >= baudrate,
 		 "MCK frequency is too small to set required baud rate");
 
-	divisor = mck_freq_hz / 16 / baudrate;
+	divisor = mck_freq_hz / 16U / baudrate;
 
 	if (divisor > 0xFFFF) {
 		return -EINVAL;
@@ -214,8 +214,8 @@ static int uart_sam_fifo_fill(struct device *dev, const uint8_t *tx_data,
 	volatile Uart * const uart = DEV_CFG(dev)->regs;
 
 	/* Wait for transmitter to be ready. */
-	while ((uart->UART_SR & UART_SR_TXRDY) == 0)
-		;
+	while ((uart->UART_SR & UART_SR_TXRDY) == 0) {
+	}
 
 	uart->UART_THR = *tx_data;
 
@@ -309,8 +309,8 @@ static int uart_sam_irq_is_pending(struct device *dev)
 {
 	volatile Uart * const uart = DEV_CFG(dev)->regs;
 
-	return    ((uart->UART_SR & UART_SR_TXRDY)
-		| (uart->UART_SR & UART_SR_RXRDY));
+	return (uart->UART_IMR & (UART_IMR_TXRDY | UART_IMR_RXRDY)) &
+		(uart->UART_SR & (UART_SR_TXRDY | UART_SR_RXRDY));
 }
 
 static int uart_sam_irq_update(struct device *dev)

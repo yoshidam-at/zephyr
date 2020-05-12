@@ -14,9 +14,9 @@ LOG_MODULE_DECLARE(net_coap, CONFIG_COAP_LOG_LEVEL);
 #include <stdbool.h>
 #include <errno.h>
 
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 
-#include <misc/printk.h>
+#include <sys/printk.h>
 
 #include <net/coap.h>
 #include <net/coap_link_format.h>
@@ -46,7 +46,7 @@ static inline bool append_be16(struct coap_packet *cpkt, u16_t data)
 		return false;
 	}
 
-	cpkt->data[cpkt->offset++] = (data & 0xFF) >> 8;
+	cpkt->data[cpkt->offset++] = data >> 8;
 	cpkt->data[cpkt->offset++] = (u8_t) data;
 
 	return true;
@@ -78,7 +78,7 @@ static bool match_path_uri(const char * const *path,
 		return false;
 	}
 
-	if (len <= 1 || uri[0] != '/') {
+	if (len <= 1U || uri[0] != '/') {
 		return false;
 	}
 

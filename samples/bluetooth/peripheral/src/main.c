@@ -10,8 +10,8 @@
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <misc/printk.h>
-#include <misc/byteorder.h>
+#include <sys/printk.h>
+#include <sys/byteorder.h>
 #include <zephyr.h>
 
 #include <settings/settings.h>
@@ -21,10 +21,10 @@
 #include <bluetooth/conn.h>
 #include <bluetooth/uuid.h>
 #include <bluetooth/gatt.h>
+#include <bluetooth/services/bas.h>
+#include <bluetooth/services/hrs.h>
 
-#include <gatt/hrs.h>
-#include <gatt/bas.h>
-#include <gatt/cts.h>
+#include "cts.h"
 
 /* Custom Service Variables */
 static struct bt_uuid_128 vnd_uuid = BT_UUID_INIT_128(
@@ -65,7 +65,6 @@ static ssize_t write_vnd(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 	return len;
 }
 
-static struct bt_gatt_ccc_cfg vnd_ccc_cfg[BT_GATT_CCC_MAX] = {};
 static u8_t simulate_vnd;
 static u8_t indicating;
 static struct bt_gatt_indicate_params ind_params;
@@ -78,7 +77,7 @@ static void vnd_ccc_cfg_changed(const struct bt_gatt_attr *attr, u16_t value)
 static void indicate_cb(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 			u8_t err)
 {
-	printk("Indication %s\n", err != 0 ? "fail" : "success");
+	printk("Indication %s\n", err != 0U ? "fail" : "success");
 	indicating = 0U;
 }
 
@@ -187,8 +186,7 @@ static ssize_t write_without_rsp_vnd(struct bt_conn *conn,
 }
 
 /* Vendor Primary Service Declaration */
-static struct bt_gatt_attr vnd_attrs[] = {
-	/* Vendor Primary Service Declaration */
+BT_GATT_SERVICE_DEFINE(vnd_svc,
 	BT_GATT_PRIMARY_SERVICE(&vnd_uuid),
 	BT_GATT_CHARACTERISTIC(&vnd_enc_uuid.uuid,
 			       BT_GATT_CHRC_READ | BT_GATT_CHRC_WRITE |
@@ -196,7 +194,7 @@ static struct bt_gatt_attr vnd_attrs[] = {
 			       BT_GATT_PERM_READ_ENCRYPT |
 			       BT_GATT_PERM_WRITE_ENCRYPT,
 			       read_vnd, write_vnd, vnd_value),
-	BT_GATT_CCC(vnd_ccc_cfg, vnd_ccc_cfg_changed),
+	BT_GATT_CCC(vnd_ccc_cfg_changed),
 	BT_GATT_CHARACTERISTIC(&vnd_auth_uuid.uuid,
 			       BT_GATT_CHRC_READ | BT_GATT_CHRC_WRITE,
 			       BT_GATT_PERM_READ_AUTHEN |
@@ -216,9 +214,7 @@ static struct bt_gatt_attr vnd_attrs[] = {
 			       BT_GATT_CHRC_WRITE_WITHOUT_RESP,
 			       BT_GATT_PERM_WRITE, NULL,
 			       write_without_rsp_vnd, &vnd_value),
-};
-
-static struct bt_gatt_service vnd_svc = BT_GATT_SERVICE(vnd_attrs);
+);
 
 static const struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
@@ -232,7 +228,7 @@ static const struct bt_data ad[] = {
 static void connected(struct bt_conn *conn, u8_t err)
 {
 	if (err) {
-		printk("Connection failed (err %u)\n", err);
+		printk("Connection failed (err 0x%02x)\n", err);
 	} else {
 		printk("Connected\n");
 	}
@@ -240,7 +236,7 @@ static void connected(struct bt_conn *conn, u8_t err)
 
 static void disconnected(struct bt_conn *conn, u8_t reason)
 {
-	printk("Disconnected (reason %u)\n", reason);
+	printk("Disconnected (reason 0x%02x)\n", reason);
 }
 
 static struct bt_conn_cb conn_callbacks = {
@@ -257,10 +253,7 @@ static void bt_ready(int err)
 
 	printk("Bluetooth initialized\n");
 
-	hrs_init(0x01);
-	bas_init();
 	cts_init();
-	bt_gatt_service_register(&vnd_svc);
 
 	if (IS_ENABLED(CONFIG_SETTINGS)) {
 		settings_load();
@@ -299,6 +292,32 @@ static struct bt_conn_auth_cb auth_cb_display = {
 	.cancel = auth_cancel,
 };
 
+static void bas_notify(void)
+{
+	u8_t battery_level = bt_gatt_bas_get_battery_level();
+
+	battery_level--;
+
+	if (!battery_level) {
+		battery_level = 100U;
+	}
+
+	bt_gatt_bas_set_battery_level(battery_level);
+}
+
+static void hrs_notify(void)
+{
+	static u8_t heartrate = 90U;
+
+	/* Heartrate measurements simulation */
+	heartrate++;
+	if (heartrate == 160U) {
+		heartrate = 90U;
+	}
+
+	bt_gatt_hrs_notify(heartrate);
+}
+
 void main(void)
 {
 	int err;
@@ -333,7 +352,7 @@ void main(void)
 				continue;
 			}
 
-			ind_params.attr = &vnd_attrs[2];
+			ind_params.attr = &vnd_svc.attrs[2];
 			ind_params.func = indicate_cb;
 			ind_params.data = &indicating;
 			ind_params.len = sizeof(indicating);

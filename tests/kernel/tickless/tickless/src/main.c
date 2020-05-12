@@ -11,7 +11,7 @@
 #include <zephyr.h>
 #include <ztest.h>
 
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <arch/cpu.h>
 #include <tc_util.h>
 #if defined(CONFIG_ARCH_POSIX)
@@ -56,7 +56,7 @@ typedef u64_t _timer_res_t;
 #if defined(CONFIG_ARCH_POSIX)
 #define _TIMESTAMP_READ()       (posix_get_hw_cycle())
 #else
-#define _TIMESTAMP_READ()       (_tsc_read())
+#define _TIMESTAMP_READ()       (z_tsc_read())
 #endif
 #define _TIMESTAMP_CLOSE()
 
@@ -186,7 +186,7 @@ void ticklessTestThread(void)
 #elif defined(CONFIG_ARCH_POSIX)
 	printk("diff  time stamp: %llu\n", diff_tsc);
 	printk("Cal   time stamp: %llu\n", cal_tsc);
-#elif defined(CONFIG_ARM) || defined(CONFIG_SOC_QUARK_SE_C1000_SS)
+#elif defined(CONFIG_ARM)
 	printk("diff  time stamp: 0x%x\n", diff_tsc);
 	printk("Cal   time stamp: 0x%x\n", cal_tsc);
 #endif
@@ -196,9 +196,9 @@ void ticklessTestThread(void)
 	 * calibrated TSC diff and measured result
 	 */
 	if (diff_tsc > cal_tsc) {
-		diff_per = (100 * (diff_tsc - cal_tsc)) / cal_tsc;
+		diff_per = ((diff_tsc - cal_tsc) * 100U) / cal_tsc;
 	} else {
-		diff_per = (100 * (cal_tsc - diff_tsc)) / cal_tsc;
+		diff_per = ((cal_tsc - diff_tsc) * 100U) / cal_tsc;
 	}
 
 	printk("variance in time stamp diff: %d percent\n", (s32_t)diff_per);

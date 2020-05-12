@@ -12,7 +12,6 @@
  *
  *  struct _thread_arch
  *  struct _callee_saved
- *  struct _caller_saved
  *
  * necessary to instantiate instances of struct k_thread.
  */
@@ -21,8 +20,7 @@
 #define ZEPHYR_ARCH_ARC_INCLUDE_KERNEL_ARCH_THREAD_H_
 
 /*
- * Reason a thread has relinquished control: threads can only be in the NONE
- * or COOP state, threads can be one in the four.
+ * Reason a thread has relinquished control.
  */
 #define _CAUSE_NONE 0
 #define _CAUSE_COOP 1
@@ -32,14 +30,9 @@
 #ifndef _ASMLANGUAGE
 #include <zephyr/types.h>
 
-struct _caller_saved {
-	/*
-	 * Saved on the stack as part of handling a regular IRQ or by the
-	 * kernel when calling the FIRQ return code.
-	 */
-};
-
-typedef struct _caller_saved _caller_saved_t;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct _callee_saved {
 	u32_t sp; /* r28 */
@@ -48,14 +41,8 @@ typedef struct _callee_saved _callee_saved_t;
 
 struct _thread_arch {
 
-	/* interrupt key when relinquishing control */
-	u32_t intlock_key;
-
 	/* one of the _CAUSE_xxxx definitions above */
 	int relinquish_cause;
-
-	/* return value from _Swap */
-	unsigned int return_value;
 
 #ifdef CONFIG_ARC_STACK_CHECKING
 	/* High address of stack region, stack grows downward from this
@@ -76,6 +63,11 @@ struct _thread_arch {
 
 typedef struct _thread_arch _thread_arch_t;
 
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* _ASMLANGUAGE */
+
 
 #endif /* ZEPHYR_ARCH_ARC_INCLUDE_KERNEL_ARCH_THREAD_H_ */

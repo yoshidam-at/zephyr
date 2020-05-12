@@ -63,18 +63,37 @@ endif
 if USB
 config USB_DW
 	default y
+
 config USB_DW_IRQ_PRI
 	default 3
+
 config USB_DW_USB_2_0
 	default y
-config USB_HID_MAX_PAYLOAD_SIZE
+
+if USB_DEVICE_HID
+config USB_REQUEST_BUFFER_SIZE
 	default 128
-config USB_COMPOSITE_BUFFER_SIZE
-	default 128
+endif
+
 if USB_DFU_CLASS
-config USB_DFU_MAX_XFER_SIZE
+config USB_REQUEST_BUFFER_SIZE
 	default 4096
 endif
+
+config USB_DEVICE_STACK
+	default y
+
+config USB_DEVICE_VID
+	default "0x8087"
+
+config USB_DEVICE_PID
+	default "0x0B1A"
+
+config USB_DEVICE_MANUFACTURER
+	default "Intel(R) Corporation"
+
+config USB_DEVICE_PRODUCT
+	default "Sue Creek (S1000) ASIC"
 
 endif # USB
 
@@ -106,9 +125,6 @@ endif
 if DMA
 
 config DMA_CAVS
-	default y
-
-config DCACHE_WRITEBACK
 	default y
 
 endif
@@ -153,39 +169,33 @@ endif
 if FLASH
 
 config SPI
-	def_bool y
+	default y
 
 config SPI_NOR
-	def_bool y
-
-config SPI_NOR_PAGE_SIZE
-	default 256
-
-config SPI_NOR_SECTOR_SIZE
-	default 4096
+	default y
 
 config FLASH_HAS_PAGE_LAYOUT
-	def_bool y
+	default y
 
 config FLASH_PAGE_LAYOUT
-	def_bool y
+	default y
 
 endif
 
 if SPI
 
 config SPI_DW
-	def_bool y
+	default y
 
 config SPI_0
-	def_bool y
+	default y
 
 endif
 
 if PINMUX
 
 config PINMUX_INTEL_S1000
-	def_bool y
+	default y
 
 endif
 

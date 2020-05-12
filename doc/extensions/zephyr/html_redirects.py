@@ -43,20 +43,25 @@ def setup(app):
     app.add_config_value('html_redirect_pages', [], 'html')
     app.connect('build-finished', create_redirect_pages)
 
+    # Since we're just setting up a build-finished hook, which runs
+    # after both reading and writing, this extension is safe for both.
+    return {
+        'parallel_read_safe': True,
+        'parallel_write_safe': True,
+    }
+
 
 def create_redirect_pages(app, docname):
     if not isinstance(app.builder, StandaloneHTMLBuilder):
         return  # only relevant for standalone HTML output
 
     for (old_url, new_url) in app.config.html_redirect_pages:
-        print("Creating redirect %s to %s..." % (old_url, new_url))
         if old_url.startswith('/'):
-            print("Stripping leading / from URL in config file...")
             old_url = old_url[1:]
+        print("Creating redirect: %s.html to %s.html" % (old_url, new_url))
 
         new_url = app.builder.get_relative_uri(old_url, new_url)
         out_file = app.builder.get_outfilename(old_url)
-        print("HTML file %s redirects to relative URL %s" % (out_file, new_url))
 
         out_dir = os.path.dirname(out_file)
         if not os.path.exists(out_dir):

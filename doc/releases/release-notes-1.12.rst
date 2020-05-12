@@ -264,7 +264,7 @@ Documentation
 * Added description for kernel test cases through extensive doxygen comments
 * Discovered some API docs were missing, and fixed
 * Documentation added covering system calls and userspace, kernel, and
-  threading APIs, POSIX compability, VLANs, network traffic
+  threading APIs, POSIX compatibility, VLANs, network traffic
   classification, and the sanitycheck script used by CI.
 * Documented writing guidelines and local doc generation process
 * Improved Sphinx search results output (removed markup)
@@ -635,12 +635,12 @@ These GitHub issues were closed since the previous 1.11.0 tagged release:
 * :github:`7380` - dma_stm32f4x possible access out of bounds in start/stop handlers
 * :github:`7388` - nxp_mpu: suspicious ENDADDR_ROUND() macro
 * :github:`7389` - t1_adc108s102 buffer overflow due to chan->buf_idx growth
-* :github:`7412` - Mismatch between 'uint32_t' (and `off_t`) definitions in minimal libc and newlib
+* :github:`7412` - Mismatch between 'uint32_t' (and 'off_t') definitions in minimal libc and newlib
 * :github:`7434` - bluetooth: host: sample applications can't set BT address w/o using an FS
 * :github:`7437` - Zephyr's mailing list archives were hard to find
 * :github:`7442` - menuconfig should perform fuzzy string matching for symbols
 * :github:`7447` - net tests: valgrind detected issues
-* :github:`7452` - nRF52, NXP kinetis, ARM Beetle and  STM `MPU` option appear for every MPU-equipped device
+* :github:`7452` - nRF52, NXP kinetis, ARM Beetle and  STM MPU option appear for every MPU-equipped device
 * :github:`7453` - Bluetooth mesh message context API needs to expose DST address of RX messages
 * :github:`7459` - net: Multiple inconsistent settings to configure TIME_WAIT delay in the IP stack
 * :github:`7460` - Unable to view PR #6391
@@ -649,7 +649,7 @@ These GitHub issues were closed since the previous 1.11.0 tagged release:
 * :github:`7480` - pthread_attr_init( ) does not conform to POSIX specification
 * :github:`7482` - [Coverity CID :185523]  Out-of-bounds read in lsm6dsl driver
 * :github:`7495` - cmake: extensions: ToolchainCapabilityDatabase.cmake parse error in shippable
-* :github:`7500` - DHCP: when CONFIG_NET_APP_MY_IPV4_ADDR is IP stack needs to rebind on DHCP aquire
+* :github:`7500` - DHCP: when CONFIG_NET_APP_MY_IPV4_ADDR is IP stack needs to rebind on DHCP acquire
 * :github:`7508` - [Coverity CID :185523] Memory - illegal accesses in /drivers/sensor/lsm6dsl/lsm6dsl.c
 * :github:`7511` - [Coverity CID :185391] Incorrect expression in /tests/lib/rbtree/src/main.c
 * :github:`7519` - Verify CODEOWNERS (not) including subfolders is intended
@@ -752,7 +752,7 @@ These GitHub issues were closed since the previous 1.11.0 tagged release:
 * :github:`7979` - drivers: dma: dma_cavs: DMA driver does not support per-channel callbacks
 * :github:`7989` - eth: ping: can't ping others from zephyr console
 * :github:`8005` - FRDM-K64F boot hang w/ mcuboot + lwm2m client
-* :github:`8009` - POSIX `clock_gettime()` is discontinuous
+* :github:`8009` - POSIX clock_gettime() is discontinuous
 * :github:`8015` - Driver:spi_flash_w25qxxdv.c init mistake and can not be erased
 * :github:`8032` - _SysFatalErrorHandler not working properly for arc on quark_se_c1000_ss_devboard
 * :github:`8033` - tests/crypto/mbedtls/ results in exception on frdm_k64f
@@ -788,7 +788,7 @@ These GitHub issues were closed since the previous 1.11.0 tagged release:
 * :github:`8150` - Doc: Update Zephyr security overview
 * :github:`8171` - Tests failing with a stacking error on frdm_k64f
 * :github:`8172` - Networking tests failing with an assertion on frdm_k64f
-* :github:`8180` - objcopy bug？
+* :github:`8180` - objcopy bug
 * :github:`8182` - Problem with obtaining hop_limit from a received packet
 * :github:`8189` - lwm2m: Quickly running out of resources when using observe
 * :github:`8192` - MPU Fault on some platforms after THREAD_MONITOR "fix"

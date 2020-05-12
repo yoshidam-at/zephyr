@@ -13,12 +13,12 @@
 #include <soc.h>
 #include <init.h>
 #include <device.h>
-#include <clock_control.h>
-#include <atomic.h>
+#include <drivers/clock_control.h>
+#include <sys/atomic.h>
 
-#include <misc/util.h>
-#include <misc/stack.h>
-#include <misc/byteorder.h>
+#include <sys/util.h>
+#include <debug/stack.h>
+#include <sys/byteorder.h>
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/hci.h>
@@ -70,6 +70,14 @@ static sys_slist_t hbuf_pend;
 static s32_t hbuf_count;
 #endif
 
+/**
+ * @brief Handover from Controller thread to Host thread
+ * @details Execution context: Controller thread
+ *   Pull from memq_ll_rx and push up to Host thread recv_thread() via recv_fifo
+ * @param p1  Unused. Required to conform with Zephyr thread protoype
+ * @param p2  Unused. Required to conform with Zephyr thread protoype
+ * @param p3  Unused. Required to conform with Zephyr thread protoype
+ */
 static void prio_recv_thread(void *p1, void *p2, void *p3)
 {
 	while (1) {
@@ -77,11 +85,13 @@ static void prio_recv_thread(void *p1, void *p2, void *p3)
 		u8_t num_cmplt;
 		u16_t handle;
 
+		/* While there are completed rx nodes */
 		while ((num_cmplt = ll_rx_get(&node_rx, &handle))) {
 #if defined(CONFIG_BT_CONN)
 			struct net_buf *buf;
 
-			buf = bt_buf_get_rx(BT_BUF_EVT, K_FOREVER);
+			buf = bt_buf_get_evt(BT_HCI_EVT_NUM_COMPLETED_PACKETS,
+					     false, K_FOREVER);
 			hci_num_cmplt_encode(buf, handle, num_cmplt);
 			BT_DBG("Num Complete: 0x%04x:%u", handle, num_cmplt);
 			bt_recv_prio(buf);
@@ -90,17 +100,29 @@ static void prio_recv_thread(void *p1, void *p2, void *p3)
 		}
 
 		if (node_rx) {
-
+			/* Until now we've only peeked, now we really do
+			 * the handover
+			 */
 			ll_rx_dequeue();
 
+			/* Send the rx node up to Host thread, recv_thread() */
 			BT_DBG("RX node enqueue");
 			k_fifo_put(&recv_fifo, node_rx);
 
+			/* There may still be completed nodes, continue
+			 * pushing all those up to Host before waiting for
+			 * ULL mayfly
+			 */
 			continue;
 		}
 
 		BT_DBG("sem take...");
+		/* Wait until ULL mayfly has something to give us.
+		 * Blocking-take of the semaphore; we take it once ULL mayfly
+		 * has let it go in ll_rx_sched().
+		 */
 		k_sem_take(&sem_prio_recv, K_FOREVER);
+		/* Now, ULL mayfly has something to give to us */
 		BT_DBG("sem taken");
 
 #if defined(CONFIG_INIT_STACKS)
@@ -124,7 +146,8 @@ static inline struct net_buf *encode_node(struct node_rx_pdu *node_rx,
 	case HCI_CLASS_EVT_REQUIRED:
 	case HCI_CLASS_EVT_CONNECTION:
 		if (class == HCI_CLASS_EVT_DISCARDABLE) {
-			buf = bt_buf_get_rx(BT_BUF_EVT, K_NO_WAIT);
+			buf = bt_buf_get_evt(BT_HCI_EVT_UNKNOWN, true,
+					     K_NO_WAIT);
 		} else {
 			buf = bt_buf_get_rx(BT_BUF_EVT, K_FOREVER);
 		}
@@ -144,13 +167,13 @@ static inline struct net_buf *encode_node(struct node_rx_pdu *node_rx,
 		break;
 	}
 
-#if defined(CONFIG_BT_LL_SW)
+#if defined(CONFIG_BT_LL_SW_LEGACY)
 	{
 		extern u8_t radio_rx_fc_set(u16_t handle, u8_t fc);
 
 		radio_rx_fc_set(node_rx->hdr.handle, 0);
 	}
-#endif /* CONFIG_BT_LL_SW */
+#endif /* CONFIG_BT_LL_SW_LEGACY */
 
 	node_rx->hdr.next = NULL;
 	ll_rx_mem_release((void **)&node_rx);
@@ -283,6 +306,10 @@ static inline struct net_buf *process_hbuf(struct node_rx_pdu *n)
 }
 #endif
 
+/**
+ * @brief Blockingly pull from Controller thread's recv_fifo
+ * @details Execution context: Host thread
+ */
 static void recv_thread(void *p1, void *p2, void *p3)
 {
 #if defined(CONFIG_BT_HCI_ACL_FLOW_CONTROL)
@@ -308,7 +335,7 @@ static void recv_thread(void *p1, void *p2, void *p3)
 		err = k_poll(events, 2, K_FOREVER);
 		LL_ASSERT(err == 0);
 		if (events[0].state == K_POLL_STATE_SIGNALED) {
-			events[0].signal->signaled = 0;
+			events[0].signal->signaled = 0U;
 		} else if (events[1].state ==
 			   K_POLL_STATE_FIFO_DATA_AVAILABLE) {
 			node_rx = k_fifo_get(events[1].fifo, 0);
@@ -464,7 +491,7 @@ static const struct bt_hci_driver drv = {
 	.send	= hci_driver_send,
 };
 
-static int _hci_driver_init(struct device *unused)
+static int hci_driver_init(struct device *unused)
 {
 	ARG_UNUSED(unused);
 
@@ -473,4 +500,4 @@ static int _hci_driver_init(struct device *unused)
 	return 0;
 }
 
-SYS_INIT(_hci_driver_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
+SYS_INIT(hci_driver_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);

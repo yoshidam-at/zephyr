@@ -16,7 +16,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <kernel.h>
-#include <misc/fdtable.h>
+#include <sys/fdtable.h>
+#include <sys/speculation.h>
 
 struct fd_entry {
 	void *obj;
@@ -33,7 +34,7 @@ struct fd_entry {
 static const struct fd_op_vtable stdinout_fd_op_vtable;
 #endif
 
-__kernel static struct fd_entry fdtable[CONFIG_POSIX_MAX_FDS] = {
+static struct fd_entry fdtable[CONFIG_POSIX_MAX_FDS] = {
 #ifdef CONFIG_POSIX_API
 	/*
 	 * Predefine entries for stdin/stdout/stderr. Object pointer
@@ -64,7 +65,14 @@ static int _find_fd_entry(void)
 
 static int _check_fd(int fd)
 {
-	if (fd < 0 || fd >= ARRAY_SIZE(fdtable) || fdtable[fd].obj == NULL) {
+	if (fd < 0 || fd >= ARRAY_SIZE(fdtable)) {
+		errno = EBADF;
+		return -1;
+	}
+
+	fd = k_array_index_sanitize(fd, ARRAY_SIZE(fdtable));
+
+	if (fdtable[fd].obj == NULL) {
 		errno = EBADF;
 		return -1;
 	}
@@ -156,6 +164,7 @@ ssize_t read(int fd, void *buf, size_t sz)
 
 	return fdtable[fd].vtable->read(fdtable[fd].obj, buf, sz);
 }
+FUNC_ALIAS(read, _read, ssize_t);
 
 ssize_t write(int fd, const void *buf, size_t sz)
 {
@@ -165,6 +174,7 @@ ssize_t write(int fd, const void *buf, size_t sz)
 
 	return fdtable[fd].vtable->write(fdtable[fd].obj, buf, sz);
 }
+FUNC_ALIAS(write, _write, ssize_t);
 
 int close(int fd)
 {
@@ -179,6 +189,7 @@ int close(int fd)
 
 	return res;
 }
+FUNC_ALIAS(close, _close, int);
 
 int fsync(int fd)
 {
@@ -198,6 +209,7 @@ off_t lseek(int fd, off_t offset, int whence)
 	return z_fdtable_call_ioctl(fdtable[fd].vtable, fdtable[fd].obj, ZFD_IOCTL_LSEEK,
 			  offset, whence);
 }
+FUNC_ALIAS(lseek, _lseek, off_t);
 
 int ioctl(int fd, unsigned long request, ...)
 {
@@ -215,6 +227,12 @@ int ioctl(int fd, unsigned long request, ...)
 	return res;
 }
 
+/*
+ * In the SimpleLink case, we have yet to add support for the fdtable
+ * feature. The socket offload subsys has already defined fcntl, hence we
+ * avoid redefining fcntl here.
+ */
+#ifndef CONFIG_SOC_FAMILY_TISIMPLELINK
 int fcntl(int fd, int cmd, ...)
 {
 	va_list args;
@@ -239,12 +257,13 @@ int fcntl(int fd, int cmd, ...)
 
 	return res;
 }
+#endif
 
 /*
  * fd operations for stdio/stdout/stderr
  */
 
-int _impl__zephyr_write(const char *buf, int nbytes);
+int z_impl_zephyr_write_stdout(const char *buf, int nbytes);
 
 static ssize_t stdinout_read_vmeth(void *obj, void *buffer, size_t count)
 {
@@ -256,7 +275,7 @@ static ssize_t stdinout_write_vmeth(void *obj, const void *buffer, size_t count)
 #if defined(CONFIG_BOARD_NATIVE_POSIX)
 	return write(1, buffer, count);
 #elif defined(CONFIG_NEWLIB_LIBC)
-	return _impl__zephyr_write(buffer, count);
+	return z_impl_zephyr_write_stdout(buffer, count);
 #else
 	return 0;
 #endif

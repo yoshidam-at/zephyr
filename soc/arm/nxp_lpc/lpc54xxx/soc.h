@@ -15,13 +15,9 @@
 #ifndef _SOC__H_
 #define _SOC__H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifndef _ASMLANGUAGE
 #include <device.h>
-#include <misc/util.h>
+#include <sys/util.h>
 #include <fsl_common.h>
 #endif /* !_ASMLANGUAGE */
 
@@ -35,9 +31,5 @@ extern "C" {
 #define IOCON_PIO_OPENDRAIN_DI	0x00u
 #define IOCON_PIO_SLEW_STANDARD	0x00u
 #define IOCON_PIO_MODE_PULLUP	0x10u
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* _SOC__H_ */

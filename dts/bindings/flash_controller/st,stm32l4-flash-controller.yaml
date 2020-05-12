@@ -1,6 +1,4 @@
----
 title: STM32 L4 Flash Controller
-version: 0.1
 
 description: >
     This binding gives a base representation of the STM32 L4 Flash Controller
@@ -11,5 +9,3 @@ inherits:
 properties:
     compatible:
       constraint: "st,stm32l4-flash-controller"
-
-...

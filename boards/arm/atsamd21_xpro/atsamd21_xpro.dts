@@ -21,6 +21,7 @@
 	/* These aliases are provided for compatibility with samples */
 	aliases {
 		led0 = &led0;
+		sw0 = &user_button;
 	};
 
 	leds {
@@ -30,10 +31,22 @@
 			label = "Yellow LED";
 		};
 	};
+
+	buttons {
+		compatible = "gpio-keys";
+		user_button: button_0 {
+			gpios = <&porta 15 (GPIO_PUD_PULL_UP | GPIO_INT_ACTIVE_LOW)>;
+			label = "SW0";
+		};
+	};
+};
+
+&cpu0 {
+	clock-frequency = <48000000>;
 };
 
 &sercom0 {
-	status = "ok";
+	status = "okay";
 	compatible = "atmel,sam0-uart";
 	current-speed = <9600>;
 	rxpo = <3>;
@@ -41,7 +54,7 @@
 };
 
 &sercom1 {
-	status = "ok";
+	status = "okay";
 	compatible = "atmel,sam0-uart";
 	current-speed = <115200>;
 	rxpo = <3>;
@@ -49,7 +62,7 @@
 };
 
 &sercom3 {
-	status = "ok";
+	status = "okay";
 	compatible = "atmel,sam0-uart";
 	current-speed = <115200>;
 	rxpo = <1>;
@@ -57,8 +70,14 @@
 };
 
 &sercom5 {
-	status = "ok";
+	status = "okay";
 	compatible = "atmel,sam0-spi";
 	dipo = <0>;
 	dopo = <2>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+};
+
+&usb0 {
+	status = "okay";
 };

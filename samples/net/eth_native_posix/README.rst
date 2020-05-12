@@ -11,7 +11,7 @@ interface to the host system. One can communicate with Zephyr via this network
 interface.
 
 The source code for this sample application can be found at:
-:file:`samples/net/eth_native_posix`.
+:zephyr_file:`samples/net/eth_native_posix`.
 
 Building And Running
 ********************
@@ -35,7 +35,7 @@ with admin privileges, like this:
 
 .. code-block:: console
 
-    sudo --preserve-env=ZEPHYR_BASE make run
+    sudo --preserve-env=ZEPHYR_BASE make -Cbuild run
 
 If the ``sudo --preserve-env=ZEPHYR_BASE`` gives an error,
 just use ``sudo --preserve-env`` instead.
@@ -69,7 +69,7 @@ in QEMU.
 If you want to connect two Zephyr instances together, you can do it like this:
 
 Create two Zephyr config files prj1.conf and prj2.conf. You can use
-:file:`samples/net/eth_native_posix/prj.conf` as a base.
+:zephyr_file:`samples/net/eth_native_posix/prj.conf` as a base.
 
 Set prj1.conf IP address configuration like this:
 
@@ -105,15 +105,13 @@ just use ``sudo --preserve-env`` instead):
 
 .. code-block:: console
 
-    mkdir -p build1/native_posix
-    cmake -DCONF_FILE=prj1.conf -DBOARD=native_posix -Bbuild1/native_posix -H.
+    cmake -DCONF_FILE=prj1.conf -DBOARD=native_posix -Bbuild1/native_posix .
     make -s -C build1/native_posix
     sudo --preserve-env=ZEPHYR_BASE make -s -C build1/native_posix run
 
 .. code-block:: console
 
-    mkdir -p build2/native_posix
-    cmake -DCONF_FILE=prj2.conf -DBOARD=native_posix -Bbuild2/native_posix -H.
+    cmake -DCONF_FILE=prj2.conf -DBOARD=native_posix -Bbuild2/native_posix .
     make -s -C build2/native_posix
     sudo --preserve-env=ZEPHYR_BASE make -s -C build2/native_posix run
 

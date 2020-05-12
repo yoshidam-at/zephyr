@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 Intel Corporation
+ * Copyright (c) 2019 Intel Corporation
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -63,9 +63,13 @@
  * Interrupt Descriptor Table (IDT). This is a bogus address as this
  * section will be stripped off in the final image.
  */
-#define IDT_BASE				0xFFFFF7FF
+#define IDT_BASE				(RAM_BASE + RAM_SIZE)
 
 /* size of the Interrupt Descriptor Table (IDT) */
 #define IDT_SIZE				0x2000
+
+/* low power ram where DMA buffers are typically placed */
+#define LPRAM_BASE				(DT_LP_SRAM_BASE)
+#define LPRAM_SIZE				(DT_LP_SRAM_SIZE)
 
 #endif /* __INC_MEMORY_H */

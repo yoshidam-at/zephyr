@@ -6,9 +6,9 @@
 
 #include <zephyr.h>
 #include <device.h>
-#include <gpio.h>
-#include <misc/printk.h>
-#include <misc/util.h>
+#include <drivers/gpio.h>
+#include <sys/printk.h>
+#include <sys/util.h>
 
 /* GPIO driver name */
 #define GPIO_DRV_NAME	CONFIG_GPIO_ALTERA_NIOS2_OUTPUT_DEV_NAME
@@ -59,7 +59,7 @@ void main(void)
 	if (ret) {
 		printk("Error set GPIO port\n");
 	}
-	k_sleep(MSEC_PER_SEC * 5);
+	k_sleep(MSEC_PER_SEC * 5U);
 
 	for (i = 0; i < LED_PINS_WIRED; i++) {
 		printk("Turn On LED[%d]\n", i);
@@ -68,7 +68,7 @@ void main(void)
 			printk("Error writing led pin\n");
 		}
 
-		k_sleep(MSEC_PER_SEC * 5);
+		k_sleep(MSEC_PER_SEC * 5U);
 		ret = gpio_pin_write(gpio_dev, i, 1);
 		if (ret) {
 			printk("Error writing led pin\n");

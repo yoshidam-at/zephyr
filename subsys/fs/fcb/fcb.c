@@ -8,7 +8,7 @@
 #include <limits.h>
 #include <stdlib.h>
 
-#include "fcb.h"
+#include <fs/fcb.h>
 #include "fcb_priv.h"
 #include "string.h"
 
@@ -109,7 +109,7 @@ fcb_init(int f_area_id, struct fcb *fcb)
 	}
 
 	align = fcb_get_align(fcb);
-	if (align == 0) {
+	if (align == 0U) {
 		return FCB_ERR_ARGS;
 	}
 

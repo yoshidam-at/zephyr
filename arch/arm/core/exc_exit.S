@@ -21,9 +21,12 @@
 
 _ASM_FILE_PROLOGUE
 
-GTEXT(_ExcExit)
+GTEXT(z_ExcExit)
 GTEXT(_IntExit)
 GDATA(_kernel)
+#if defined(CONFIG_CPU_CORTEX_R)
+GTEXT(__pendsv)
+#endif
 
 /**
  *
@@ -53,7 +56,7 @@ GDATA(_kernel)
 
 SECTION_SUBSEC_FUNC(TEXT, _HandlerModeExit, _IntExit)
 
-/* _IntExit falls through to _ExcExit (they are aliases of each other) */
+/* _IntExit falls through to z_ExcExit (they are aliases of each other) */
 
 /**
  *
@@ -65,21 +68,30 @@ SECTION_SUBSEC_FUNC(TEXT, _HandlerModeExit, _IntExit)
  * @return N/A
  */
 
-SECTION_SUBSEC_FUNC(TEXT, _HandlerModeExit, _ExcExit)
+SECTION_SUBSEC_FUNC(TEXT, _HandlerModeExit, z_ExcExit)
+#if defined(CONFIG_CPU_CORTEX_R)
+    push {r0, lr}
+#endif
 
 #ifdef CONFIG_PREEMPT_ENABLED
     ldr r0, =_kernel
 
     ldr r1, [r0, #_kernel_offset_to_current]
 
-    ldr r0, [r0, _kernel_offset_to_ready_q_cache]
+    ldr r0, [r0, #_kernel_offset_to_ready_q_cache]
     cmp r0, r1
     beq _EXIT_EXC
 
+#if defined(CONFIG_CPU_CORTEX_M)
     /* context switch required, pend the PendSV exception */
     ldr r1, =_SCS_ICSR
     ldr r2, =_SCS_ICSR_PENDSV
     str r2, [r1]
+#elif defined(CONFIG_CPU_CORTEX_R)
+    push {r0, lr}
+    bl __pendsv
+    pop {r0, lr}
+#endif
 
 _ExcExitWithGdbStub:
 
@@ -88,7 +100,7 @@ _EXIT_EXC:
 
 #ifdef CONFIG_STACK_SENTINEL
     push {r0, lr}
-    bl _check_stack_sentinel
+    bl z_check_stack_sentinel
 #if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
     pop {r0, r1}
     mov lr, r1
@@ -96,4 +108,31 @@ _EXIT_EXC:
     pop {r0, lr}
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
 #endif /* CONFIG_STACK_SENTINEL */
+
+#if defined(CONFIG_CPU_CORTEX_M)
     bx lr
+#elif defined(CONFIG_CPU_CORTEX_R)
+    /*
+     * r0-r3 are either the values from the thread before it was switched out
+     * or they are the args to _new_thread for a new thread
+     */
+    pop {r0, lr}
+    push {r4, r5}
+
+    cmp r0, #RET_FROM_SVC
+    cps #MODE_SYS
+    ldmia sp!, {r0-r5}
+    beq _svc_exit
+
+    cps #MODE_IRQ
+    b _exc_exit
+
+_svc_exit:
+    cps #MODE_SVC
+
+_exc_exit:
+    mov r12, r4
+    mov lr, r5
+    pop {r4, r5}
+    movs pc, lr
+#endif

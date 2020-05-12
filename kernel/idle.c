@@ -8,9 +8,9 @@
 #include <kernel_structs.h>
 #include <toolchain.h>
 #include <linker/sections.h>
-#include <drivers/system_timer.h>
+#include <drivers/timer/system_timer.h>
 #include <wait_q.h>
-#include <power.h>
+#include <power/power.h>
 #include <stdbool.h>
 
 #ifdef CONFIG_TICKLESS_IDLE_THRESH
@@ -21,22 +21,27 @@
 
 #ifdef CONFIG_SYS_POWER_MANAGEMENT
 /*
- * Used to allow sys_suspend() implementation to control notification
+ * Used to allow _sys_suspend() implementation to control notification
  * of the event that caused exit from kernel idling after pm operations.
  */
 unsigned char sys_pm_idle_exit_notify;
 
-#if defined(CONFIG_SYS_POWER_LOW_POWER_STATE)
-void __attribute__((weak)) sys_resume(void)
+
+/* LCOV_EXCL_START
+ * These are almost certainly overidden and in any event do nothing
+ */
+#if defined(CONFIG_SYS_POWER_SLEEP_STATES)
+void __attribute__((weak)) _sys_resume(void)
 {
 }
 #endif
 
-#if defined(CONFIG_SYS_POWER_DEEP_SLEEP)
-void __attribute__((weak)) sys_resume_from_deep_sleep(void)
+#if defined(CONFIG_SYS_POWER_DEEP_SLEEP_STATES)
+void __attribute__((weak)) _sys_resume_from_deep_sleep(void)
 {
 }
 #endif
+/* LCOV_EXCL_STOP */
 
 #endif /* CONFIG_SYS_POWER_MANAGEMENT */
 
@@ -61,7 +66,7 @@ static void set_kernel_idle_time_in_ticks(s32_t ticks)
 
 static void sys_power_save_idle(void)
 {
-	s32_t ticks = _get_next_timeout_expiry();
+	s32_t ticks = z_get_next_timeout_expiry();
 
 	/* The documented behavior of CONFIG_TICKLESS_IDLE_THRESH is
 	 * that the system should not enter a tickless idle for
@@ -74,15 +79,15 @@ static void sys_power_save_idle(void)
 #endif
 
 	set_kernel_idle_time_in_ticks(ticks);
-#if (defined(CONFIG_SYS_POWER_LOW_POWER_STATE) || \
-	defined(CONFIG_SYS_POWER_DEEP_SLEEP))
+#if (defined(CONFIG_SYS_POWER_SLEEP_STATES) || \
+	defined(CONFIG_SYS_POWER_DEEP_SLEEP_STATES))
 
 	sys_pm_idle_exit_notify = 1U;
 
 	/*
 	 * Call the suspend hook function of the soc interface to allow
 	 * entry into a low power state. The function returns
-	 * SYS_PM_NOT_HANDLED if low power state was not entered, in which
+	 * SYS_POWER_STATE_ACTIVE if low power state was not entered, in which
 	 * case, kernel does normal idle processing.
 	 *
 	 * This function is entered with interrupts disabled. If a low power
@@ -92,7 +97,7 @@ static void sys_power_save_idle(void)
 	 * idle processing re-enables interrupts which is essential for
 	 * the kernel's scheduling logic.
 	 */
-	if (sys_suspend(ticks) == SYS_PM_NOT_HANDLED) {
+	if (_sys_suspend(ticks) == SYS_POWER_STATE_ACTIVE) {
 		sys_pm_idle_exit_notify = 0U;
 		k_cpu_idle();
 	}
@@ -102,17 +107,17 @@ static void sys_power_save_idle(void)
 }
 #endif
 
-void _sys_power_save_idle_exit(s32_t ticks)
+void z_sys_power_save_idle_exit(s32_t ticks)
 {
-#if defined(CONFIG_SYS_POWER_LOW_POWER_STATE)
+#if defined(CONFIG_SYS_POWER_SLEEP_STATES)
 	/* Some CPU low power states require notification at the ISR
 	 * to allow any operations that needs to be done before kernel
 	 * switches task or processes nested interrupts. This can be
-	 * disabled by calling sys_pm_idle_exit_notification_disable().
+	 * disabled by calling _sys_pm_idle_exit_notification_disable().
 	 * Alternatively it can be simply ignored if not required.
 	 */
 	if (sys_pm_idle_exit_notify) {
-		sys_resume();
+		_sys_resume();
 	}
 #endif
 

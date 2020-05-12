@@ -1,5 +1,6 @@
 #!/bin/bash
 # Copyright (c) 2017 Linaro Limited
+# Copyright (c) 2018 Intel Corporation
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -14,12 +15,12 @@
 # -b  base branch
 # -r  the remote to rebase on
 #
-# The script can be run locally using for exmaple:
-# ./scripts/ci/run_ci.sh -b master -r upstream  -l
+# The script can be run locally using for example:
+# ./scripts/ci/run_ci.sh -b master -r origin  -l -R <commit range>
 
 set -xe
 
-SANITYCHECK_OPTIONS=" --inline-logs --enable-coverage -N"
+SANITYCHECK_OPTIONS=" --inline-logs -N"
 SANITYCHECK_OPTIONS_RETRY="${SANITYCHECK_OPTIONS} --only-failed --outdir=out-2nd-pass"
 SANITYCHECK_OPTIONS_RETRY_2="${SANITYCHECK_OPTIONS} --only-failed --outdir=out-3nd-pass"
 export BSIM_OUT_PATH="${BSIM_OUT_PATH:-/opt/bsim/}"
@@ -30,7 +31,7 @@ WEST_COMMANDS_RESULTS_FILE="./pytest_out/west_commands.xml"
 MATRIX_BUILDS=1
 MATRIX=1
 
-while getopts ":p:m:b:r:M:cfsl" opt; do
+while getopts ":p:m:b:r:M:cfslR:" opt; do
 	case $opt in
 		c)
 			echo "Execute CI" >&2
@@ -69,6 +70,10 @@ while getopts ":p:m:b:r:M:cfsl" opt; do
 			echo "Remote: $OPTARG" >&2
 			REMOTE=$OPTARG
 			;;
+		R)
+			echo "Range: $OPTARG" >&2
+			RANGE=$OPTARG
+			;;
 		\?)
 			echo "Invalid option: -$OPTARG" >&2
 			;;
@@ -89,16 +94,28 @@ if [ -n "$MAIN_CI" ]; then
 
 	if [ -z "$BRANCH" ]; then
 		echo "No base branch given"
-		exit
+		exit 1
 	else
 		COMMIT_RANGE=$REMOTE/${BRANCH}..HEAD
 		echo "Commit range:" ${COMMIT_RANGE}
 	fi
+	if [ -n "$RANGE" ]; then
+		COMMIT_RANGE=$RANGE
+	fi
 	source zephyr-env.sh
 	SANITYCHECK="${ZEPHYR_BASE}/scripts/sanitycheck"
+
+	# Possibly the only record of what exact version is being tested:
+	short_git_log='git log -n 5 --oneline --decorate --abbrev=12 '
+
 	if [ -n "$PULL_REQUEST_NR" ]; then
+		$short_git_log $REMOTE/${BRANCH}
+		# Now let's pray this script is being run from a
+		# different location
+# https://stackoverflow.com/questions/3398258/edit-shell-script-while-its-running
 		git rebase $REMOTE/${BRANCH};
 	fi
+	$short_git_log
 fi
 
 function handle_coverage() {
@@ -106,33 +123,40 @@ function handle_coverage() {
 	echo "Calling gcovr"
 	gcovr -r ${ZEPHYR_BASE} -x > shippable/codecoverage/coverage.xml;
 
-	# Capture data
-	echo "Running lcov --capture ..."
-	lcov --capture \
-		--directory sanity-out/native_posix/ \
-		--directory sanity-out/nrf52_bsim/ \
-		--directory sanity-out/unit_testing/ \
-		--directory bsim_bt_out/ \
-		--output-file lcov.pre.info -q --rc lcov_branch_coverage=1;
 
-	# Remove noise
-	echo "Exclude data from coverage report..."
-	lcov -q \
-		--remove lcov.pre.info mylib.c \
-		--remove lcov.pre.info tests/\* \
-		--remove lcov.pre.info samples/\* \
-		--remove lcov.pre.info ext/\* \
-		--remove lcov.pre.info *generated* \
-		-o lcov.info --rc lcov_branch_coverage=1;
+	# Upload to codecov.io only on merged builds or if CODECOV_IO variable
+	# is set.
+	if [ -n "${CODECOV_IO}" -o -z "${PULL_REQUEST_NR}" ]; then
+		# Capture data
+		echo "Running lcov --capture ..."
+		lcov --capture \
+			--directory sanity-out/native_posix/ \
+			--directory sanity-out/nrf52_bsim/ \
+			--directory sanity-out/unit_testing/ \
+			--directory bsim_bt_out/ \
+			--output-file lcov.pre.info -q --rc lcov_branch_coverage=1;
 
-	# Cleanup
-	rm lcov.pre.info;
+		# Remove noise
+		echo "Exclude data from coverage report..."
+		lcov -q \
+			--remove lcov.pre.info mylib.c \
+			--remove lcov.pre.info tests/\* \
+			--remove lcov.pre.info samples/\* \
+			--remove lcov.pre.info ext/\* \
+			--remove lcov.pre.info *generated* \
+			-o lcov.info --rc lcov_branch_coverage=1;
+
+		# Cleanup
+		rm lcov.pre.info;
+		rm -rf sanity-out out-2nd-pass;
+
+		# Upload to codecov.io
+		echo "Upload coverage reports to codecov.io"
+		bash <(curl -s https://codecov.io/bash) -f "lcov.info" -X coveragepy -X fixes;
+		rm -f lcov.info;
+	fi
+
 	rm -rf sanity-out out-2nd-pass;
-
-	# Upload to codecov.io
-	echo "Upload coverage reports to codecov.io"
-	bash <(curl -s https://codecov.io/bash) -f "lcov.info" -X coveragepy -X fixes;
-	rm -f lcov.info;
 
 }
 
@@ -175,8 +199,8 @@ function on_complete() {
 	fi;
 
 	if [ "$MATRIX" = "1" ]; then
-		echo "Handle coverage data..."
-		handle_coverage
+		echo "Skip handling coverage data..."
+		#handle_coverage
 	else
 		rm -rf sanity-out out-2nd-pass;
 	fi;
@@ -245,9 +269,9 @@ if [ -n "$MAIN_CI" ]; then
 		# builder 1.  For now, this is just done for the west
 		# extension commands, but additional directories which
 		# run pytest could go here too.
+		PYTEST=$(type -p pytest-3 || echo "pytest")
 		mkdir -p $(dirname ${WEST_COMMANDS_RESULTS_FILE})
-		WEST_SRC=$(west list --format='{abspath}' west)/src
-		PYTHONPATH=./scripts/west_commands:$WEST_SRC pytest \
+		PYTHONPATH=./scripts/west_commands "${PYTEST}" \
 			  --junitxml=${WEST_COMMANDS_RESULTS_FILE} \
 			  ./scripts/west_commands/tests
 	else
@@ -265,8 +289,8 @@ if [ -n "$MAIN_CI" ]; then
 	# Run a subset of tests based on matrix size
 	${SANITYCHECK} ${SANITYCHECK_OPTIONS} --load-tests test_file.txt \
 		--subset ${MATRIX}/${MATRIX_BUILDS} || \
-		( sleep 10; ${SANITYCHECK} ${SANITYCHECK_OPTIONS_RETRY} ) || \
-		( sleep 10; ${SANITYCHECK} ${SANITYCHECK_OPTIONS_RETRY_2}; )
+		( sleep 30; ${SANITYCHECK} ${SANITYCHECK_OPTIONS_RETRY} ) || \
+		( sleep 90; ${SANITYCHECK} ${SANITYCHECK_OPTIONS_RETRY_2}; )
 		# sleep 10 to let the host settle down
 
 	# cleanup

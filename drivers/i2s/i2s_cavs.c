@@ -14,12 +14,12 @@
 
 #include <errno.h>
 #include <string.h>
-#include <misc/__assert.h>
+#include <sys/__assert.h>
 #include <kernel.h>
 #include <device.h>
 #include <init.h>
-#include <dma.h>
-#include <i2s.h>
+#include <drivers/dma.h>
+#include <drivers/i2s.h>
 #include <soc.h>
 #include "i2s_cavs.h"
 
@@ -103,19 +103,6 @@ LOG_MODULE_REGISTER(LOG_DOMAIN);
 
 /* length of the buffer queue */
 #define I2S_CAVS_BUF_Q_LEN			2
-
-#ifdef CONFIG_DCACHE_WRITEBACK
-#define DCACHE_INVALIDATE(addr, size) \
-	{ dcache_invalidate_region(addr, size); }
-#define DCACHE_CLEAN(addr, size) \
-	{ dcache_writeback_region(addr, size); }
-#else
-#define DCACHE_INVALIDATE(addr, size) \
-	do { } while (0)
-
-#define DCACHE_CLEAN(addr, size) \
-	do { } while (0)
-#endif
 
 #define CAVS_SSP_WORD_SIZE_BITS_MIN     4
 #define CAVS_SSP_WORD_SIZE_BITS_MAX     32
@@ -296,7 +283,7 @@ static void i2s_dma_rx_callback(void *arg, u32_t channel, int status)
 						buffer, &strm->in_queue, ret);
 			}
 
-			DCACHE_INVALIDATE(buffer, dev_data->cfg.block_size);
+			SOC_DCACHE_INVALIDATE(buffer, dev_data->cfg.block_size);
 
 			/* reload the DMA */
 			dma_reload(dev_data->dev_dma, strm->dma_channel,
@@ -352,7 +339,7 @@ static int i2s_cavs_configure(struct device *dev, enum i2s_dir dir,
 		return -EINVAL;
 	}
 
-	if (i2s_cfg->frame_clk_freq == 0) {
+	if (i2s_cfg->frame_clk_freq == 0U) {
 		LOG_ERR("Invalid frame_clk_freq %u",
 				i2s_cfg->frame_clk_freq);
 		return -EINVAL;
@@ -457,8 +444,8 @@ static int i2s_cavs_configure(struct device *dev, enum i2s_dir dir,
 		 * In addition, double M so that it can be later divided by 2
 		 * to get an approximately 50% duty cycle clock
 		 */
-		i2s_m = (bit_clk_freq << 1) / 100;
-		i2s_n = mclk / 100;
+		i2s_m = (bit_clk_freq << 1) / 100U;
+		i2s_n = mclk / 100U;
 
 		/* set divider value of 1 which divides the clock by 2 */
 		mdiv = 1U;
@@ -534,7 +521,7 @@ static int i2s_cavs_configure(struct device *dev, enum i2s_dir dir,
 	mn_div->nval = I2S_MNVAL(i2s_n);
 
 	/* Set up DMA channel parameters */
-	word_size_bytes = (word_size_bits + 7) / 8;
+	word_size_bytes = (word_size_bits + 7) / 8U;
 	dev_data->tx.dma_cfg.source_data_size = word_size_bytes;
 	dev_data->tx.dma_cfg.dest_data_size = word_size_bytes;
 	dev_data->rx.dma_cfg.source_data_size = word_size_bytes;
@@ -637,7 +624,7 @@ static int i2s_rx_stream_start(struct i2s_cavs_dev_data *dev_data,
 		return ret;
 	}
 
-	DCACHE_INVALIDATE(buffer, dev_data->cfg.block_size);
+	SOC_DCACHE_INVALIDATE(buffer, dev_data->cfg.block_size);
 
 	ret = dma_reload(dev_dma, strm->dma_channel, (u32_t)&ssp->ssd,
 			(u32_t)buffer, dev_data->cfg.block_size);
@@ -814,7 +801,7 @@ static int i2s_cavs_write(struct device *dev, void *mem_block, size_t size)
 		return -EIO;
 	}
 
-	DCACHE_CLEAN(mem_block, size);
+	SOC_DCACHE_FLUSH(mem_block, size);
 
 	ret = k_msgq_put(&strm->in_queue, &mem_block, dev_data->cfg.timeout);
 	if (ret) {

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 ########################################################
 # Table of contents
 ########################################################
@@ -40,21 +42,33 @@
 #   ${CMAKE_CURRENT_SOURCE_DIR}/random_esp32.c
 #   ${CMAKE_CURRENT_SOURCE_DIR}/utils.c
 # )
+#
+# As a very high-level introduction here are two call graphs that are
+# purposely minimalistic and incomplete.
+#
+#  zephyr_library_cc_option()
+#           |
+#           v
+#  zephyr_library_compile_options()  -->  target_compile_options()
+#
+#
+#  zephyr_cc_option()           --->  target_cc_option()
+#                                          |
+#                                          v
+#  zephyr_cc_option_fallback()  --->  target_cc_option_fallback()
+#                                          |
+#                                          v
+#  zephyr_compile_options()     --->  target_compile_options()
+#
+
 
 # https://cmake.org/cmake/help/latest/command/target_sources.html
 function(zephyr_sources)
   foreach(arg ${ARGV})
-    if(IS_ABSOLUTE ${arg})
-      set(path ${arg})
-    else()
-      set(path ${CMAKE_CURRENT_SOURCE_DIR}/${arg})
-    endif()
-
-    if(IS_DIRECTORY ${path})
+    if(IS_DIRECTORY ${arg})
       message(FATAL_ERROR "zephyr_sources() was called on a directory")
     endif()
-
-    target_sources(zephyr PRIVATE ${path})
+    target_sources(zephyr PRIVATE ${arg})
   endforeach()
 endfunction()
 
@@ -311,7 +325,7 @@ endmacro()
 # or zephyr_library_named. The constructors create a CMake library
 # with a name accessible through the variable ZEPHYR_CURRENT_LIBRARY.
 #
-# The variable ZEPHYR_CURRENT_LIBRARY should seldomly be needed since
+# The variable ZEPHYR_CURRENT_LIBRARY should seldom be needed since
 # the zephyr libraries have methods that modify the libraries. These
 # methods have the signature: zephyr_library_<target-function>
 #
@@ -397,8 +411,13 @@ function(zephyr_library_compile_options item)
   # zephyr_interface will be the first interface library that flags
   # are taken from.
 
-  string(RANDOM random)
-  set(lib_name options_interface_lib_${random})
+  string(MD5 uniqueness ${item})
+  set(lib_name options_interface_lib_${uniqueness})
+
+  if (TARGET ${lib_name})
+    # ${item} already added, ignoring duplicate just like CMake does
+    return()
+  endif()
 
   add_library(           ${lib_name} INTERFACE)
   target_compile_options(${lib_name} INTERFACE ${item} ${ARGN})
@@ -420,10 +439,20 @@ endfunction()
 # Add the existing CMake library 'library' to the global list of
 # Zephyr CMake libraries. This is done automatically by the
 # constructor but must called explicitly on CMake libraries that do
-# not use a zephyr library constructor, but have source files that
-# need to be included in the build.
+# not use a zephyr library constructor.
 function(zephyr_append_cmake_library library)
   set_property(GLOBAL APPEND PROPERTY ZEPHYR_LIBS ${library})
+endfunction()
+
+# Add the imported library 'library_name', located at 'library_path' to the
+# global list of Zephyr CMake libraries.
+function(zephyr_library_import library_name library_path)
+  add_library(${library_name} STATIC IMPORTED GLOBAL)
+  set_target_properties(${library_name}
+    PROPERTIES IMPORTED_LOCATION
+    ${library_path}
+    )
+  zephyr_append_cmake_library(${library_name})
 endfunction()
 
 # 1.2.1 zephyr_interface_library_*
@@ -522,6 +551,66 @@ endfunction()
 #
 # This section provides glue between CMake and the Python code that
 # manages the runners.
+
+function(_board_check_runner_type type) # private helper
+  if (NOT (("${type}" STREQUAL "FLASH") OR ("${type}" STREQUAL "DEBUG")))
+    message(FATAL_ERROR "invalid type ${type}; should be FLASH or DEBUG")
+  endif()
+endfunction()
+
+# This function sets the runner for the board unconditionally.  It's
+# meant to be used from application CMakeLists.txt files.
+#
+# NOTE: Usually board_set_xxx_ifnset() is best in board.cmake files.
+#       This lets the user set the runner at cmake time, or in their
+#       own application's CMakeLists.txt.
+#
+# Usage:
+#   board_set_runner(FLASH pyocd)
+#
+# This would set the board's flash runner to "pyocd".
+#
+# In general, "type" is FLASH or DEBUG, and "runner" is the name of a
+# runner.
+function(board_set_runner type runner)
+  _board_check_runner_type(${type})
+  if (DEFINED BOARD_${type}_RUNNER)
+    message(STATUS "overriding ${type} runner ${BOARD_${type}_RUNNER}; it's now ${runner}")
+  endif()
+  set(BOARD_${type}_RUNNER ${runner} PARENT_SCOPE)
+endfunction()
+
+# This macro is like board_set_runner(), but will only make a change
+# if that runner is currently not set.
+#
+# See also board_set_flasher_ifnset() and board_set_debugger_ifnset().
+macro(board_set_runner_ifnset type runner)
+  _board_check_runner_type(${type})
+  # This is a macro because set_ifndef() works at parent scope.
+  # If this were a function, that would be this function's scope,
+  # which wouldn't work.
+  set_ifndef(BOARD_${type}_RUNNER ${runner})
+endmacro()
+
+# A convenience macro for board_set_runner(FLASH ${runner}).
+macro(board_set_flasher runner)
+  board_set_runner(FLASH ${runner})
+endmacro()
+
+# A convenience macro for board_set_runner(DEBUG ${runner}).
+macro(board_set_debugger runner)
+  board_set_runner(DEBUG ${runner})
+endmacro()
+
+# A convenience macro for board_set_runner_ifnset(FLASH ${runner}).
+macro(board_set_flasher_ifnset runner)
+  board_set_runner_ifnset(FLASH ${runner})
+endmacro()
+
+# A convenience macro for board_set_runner_ifnset(DEBUG ${runner}).
+macro(board_set_debugger_ifnset runner)
+  board_set_runner_ifnset(DEBUG ${runner})
+endmacro()
 
 # This function is intended for board.cmake files and application
 # CMakeLists.txt files.
@@ -672,10 +761,30 @@ function(zephyr_check_compiler_flag lang option check)
 
   # Populate the cache
   if(NOT (EXISTS ${key_path}))
+
+    # This is racy. As often with race conditions, this one can easily be
+    # made worse and demonstrated with a simple delay:
+    #    execute_process(COMMAND "sleep" "5")
+    # Delete the cache, add the sleep above and run sanitycheck with a
+    # large number of JOBS. Once it's done look at the log.txt file
+    # below and you will see that concurrent cmake processes created the
+    # same files multiple times.
+
+    # While there are a number of reasons why this race seems both very
+    # unlikely and harmless, let's play it safe anyway and write to a
+    # private, temporary file first. All modern filesystems seem to
+    # support at least one atomic rename API and cmake's file(RENAME
+    # ...) officially leverages that.
+    string(RANDOM LENGTH 8 tempsuffix)
+
     file(
       WRITE
-      ${key_path}
+      "${key_path}_tmp_${tempsuffix}"
       ${inner_check}
+      )
+    file(
+      RENAME
+      "${key_path}_tmp_${tempsuffix}" "${key_path}"
       )
 
     # Populate a metadata file (only intended for trouble shooting)
@@ -688,6 +797,103 @@ function(zephyr_check_compiler_flag lang option check)
       )
   endif()
 endfunction()
+
+# zephyr_linker_sources(<location> <files>)
+#
+# <files> is one or more .ld formatted files whose contents will be
+#    copied/included verbatim into the given <location> in the global linker.ld.
+#    Preprocessor directives work inside <files>. Relative paths are resolved
+#    relative to the calling file, like zephyr_sources().
+# <location> is one of
+#    NOINIT       Inside the noinit output section.
+#    RWDATA       Inside the data output section.
+#    RODATA       Inside the rodata output section.
+#    RAM_SECTIONS Inside the RAMABLE_REGION GROUP.
+#    SECTIONS     Near the end of the file. Don't use this when linking into
+#                 RAMABLE_REGION, use RAM_SECTIONS instead.
+#
+# Use NOINIT, RWDATA, and RODATA unless they don't work for your use case.
+#
+# When placing into NOINIT, RWDATA, or RODATA, the contents of the files will be
+# placed inside an output section, so assume the section definition is already
+# present, e.g.:
+#    _mysection_start = .;
+#    KEEP(*(.mysection));
+#    _mysection_end = .;
+#    _mysection_size = ABSOLUTE(_mysection_end - _mysection_start);
+#
+# When placing into SECTIONS or RAM_SECTIONS, the files must instead define
+# their own output sections to achieve the same thing:
+#    SECTION_PROLOGUE(.mysection,,)
+#    {
+#        _mysection_start = .;
+#        KEEP(*(.mysection))
+#        _mysection_end = .;
+#    } GROUP_LINK_IN(ROMABLE_REGION)
+#    _mysection_size = _mysection_end - _mysection_start;
+#
+# Note about the above examples: If the first example was used with RODATA, and
+# the second with SECTIONS, the two examples do the same thing from a user
+# perspective.
+#
+# Friendly reminder: Beware of the different ways the location counter ('.')
+# behaves inside vs. outside section definitions.
+function(zephyr_linker_sources location)
+  # Set up the paths to the destination files. These files are #included inside
+  # the global linker.ld.
+  set(snippet_base      "${__build_dir}/include/generated")
+  set(sections_path     "${snippet_base}/snippets-sections.ld")
+  set(ram_sections_path "${snippet_base}/snippets-ram-sections.ld")
+  set(noinit_path       "${snippet_base}/snippets-noinit.ld")
+  set(rwdata_path       "${snippet_base}/snippets-rwdata.ld")
+  set(rodata_path       "${snippet_base}/snippets-rodata.ld")
+
+  # Clear destination files if this is the first time the function is called.
+  get_property(cleared GLOBAL PROPERTY snippet_files_cleared)
+  if (NOT DEFINED cleared)
+    file(WRITE ${sections_path} "")
+    file(WRITE ${ram_sections_path} "")
+    file(WRITE ${noinit_path} "")
+    file(WRITE ${rwdata_path} "")
+    file(WRITE ${rodata_path} "")
+    set_property(GLOBAL PROPERTY snippet_files_cleared true)
+  endif()
+
+  # Choose destination file, based on the <location> argument.
+  if ("${location}" STREQUAL "SECTIONS")
+    set(snippet_path "${sections_path}")
+  elseif("${location}" STREQUAL "RAM_SECTIONS")
+    set(snippet_path "${ram_sections_path}")
+  elseif("${location}" STREQUAL "NOINIT")
+    set(snippet_path "${noinit_path}")
+  elseif("${location}" STREQUAL "RWDATA")
+    set(snippet_path "${rwdata_path}")
+  elseif("${location}" STREQUAL "RODATA")
+    set(snippet_path "${rodata_path}")
+  else()
+    message(fatal_error "Must choose valid location for linker snippet.")
+  endif()
+
+  foreach(file IN ITEMS ${ARGN})
+    # Resolve path.
+    if(IS_ABSOLUTE ${file})
+      set(path ${file})
+    else()
+      set(path ${CMAKE_CURRENT_SOURCE_DIR}/${file})
+    endif()
+
+    if(IS_DIRECTORY ${path})
+      message(FATAL_ERROR "zephyr_linker_sources() was called on a directory")
+    endif()
+
+    # Append the file contents to the relevant destination file.
+    file(READ ${path} snippet)
+    file(RELATIVE_PATH relpath ${ZEPHYR_BASE} ${path})
+    file(APPEND ${snippet_path}
+             "\n/* From \${ZEPHYR_BASE}/${relpath}: */\n" "${snippet}\n")
+  endforeach()
+endfunction(zephyr_linker_sources)
+
 
 # Helper function for CONFIG_CODE_DATA_RELOCATION
 # Call this function with 2 arguments file and then memory location
@@ -763,9 +969,12 @@ endfunction()
 
 # 2.2 Misc
 #
+# import_kconfig(<prefix> <kconfig_fragment> [<keys>])
+#
 # Parse a KConfig fragment (typically with extension .config) and
 # introduce all the symbols that are prefixed with 'prefix' into the
-# CMake namespace
+# CMake namespace. List all created variable names in the 'keys'
+# output variable if present.
 function(import_kconfig prefix kconfig_fragment)
   # Parse the lines prefixed with 'prefix' in ${kconfig_fragment}
   file(
@@ -793,6 +1002,11 @@ function(import_kconfig prefix kconfig_fragment)
     endif()
 
     set("${CONF_VARIABLE_NAME}" "${CONF_VARIABLE_VALUE}" PARENT_SCOPE)
+    list(APPEND keys "${CONF_VARIABLE_NAME}")
+  endforeach()
+
+  foreach(outvar ${ARGN})
+    set(${outvar} "${keys}" PARENT_SCOPE)
   endforeach()
 endfunction()
 
@@ -962,6 +1176,12 @@ function(zephyr_library_link_libraries_ifdef feature_toggle item)
   endif()
 endfunction()
 
+function(zephyr_linker_sources_ifdef feature_toggle)
+  if(${${feature_toggle}})
+    zephyr_linker_sources(${ARGN})
+  endif()
+endfunction()
+
 macro(list_append_ifdef feature_toggle list)
   if(${${feature_toggle}})
     list(APPEND ${list} ${ARGN})
@@ -1106,10 +1326,10 @@ macro(assert test comment)
 endmacro()
 
 # Usage:
-#   assert_not(FLASH_SCRIPT "FLASH_SCRIPT has been removed; use BOARD_FLASH_RUNNER")
+#   assert_not(OBSOLETE_VAR "OBSOLETE_VAR has been removed; use NEW_VAR instead")
 #
-# will cause a FATAL_ERROR and print an errorm essage if the first
-# espression is true
+# will cause a FATAL_ERROR and print an error message if the first
+# expression is true
 macro(assert_not test comment)
   if(${test})
     message(FATAL_ERROR "Assertion failed: ${comment}")
@@ -1219,7 +1439,7 @@ function(generate_unique_target_name_from_filename filename target_name)
   string(REPLACE "." "_" x ${basename})
   string(REPLACE "@" "_" x ${x})
 
-  string(RANDOM LENGTH 8 random_chars)
+  string(MD5 unique_chars ${filename})
 
-  set(${target_name} gen_${x}_${random_chars} PARENT_SCOPE)
+  set(${target_name} gen_${x}_${unique_chars} PARENT_SCOPE)
 endfunction()

@@ -5,7 +5,7 @@
  */
 
 #include <kernel_structs.h>
-#include <atomic.h>
+#include <sys/atomic.h>
 #include <cmsis_os.h>
 
 #define TOTAL_CMSIS_THREAD_PRIORITIES (osPriorityRealtime - osPriorityIdle + 1)
@@ -68,7 +68,7 @@ osThreadId osThreadCreate(const osThreadDef_t *thread_def, void *arg)
 		 "invalid priority\n");
 
 	stacksz = thread_def->stacksize;
-	if (stacksz == 0) {
+	if (stacksz == 0U) {
 		stacksz = CONFIG_CMSIS_THREAD_MAX_STACK_SIZE;
 	}
 

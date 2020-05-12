@@ -12,8 +12,11 @@ config BOARD
 if IEEE802154
 
 config IEEE802154_NRF5
-	def_bool y
+	default y
 
 endif # IEEE802154
+
+config BT_CTLR
+	default BT
 
 endif # BOARD_NRF52840_PCA10090

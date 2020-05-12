@@ -1,42 +1,37 @@
----
 title: Flash Partitions
-version: 0.1
 
 description: >
     This binding gives a base FLASH partition description
 
 properties:
     compatible:
-      type: string
+      constraint: "fixed-partitions"
+      type: string-array
       category: required
       description: compatible strings
-      constraint: "fixed-partitions"
-      generation: define
 
-    partition\d+:
-      type: string
-      generation: define
+    "#address-cells":
+        type: int
+        category: optional
+        description: number of address cells in reg property
 
-      properties:
-          reg:
-            type: array
-            description: partition offset and size from flash bank
-            generation: define
-            category: required
-            label: offset
+    "#size-cells":
+        type: int
+        category: optional
+        description: number of size cells in reg property
 
-          label:
-            type: string
-            description: Partition label
-            generation: define
-            category: required
-
-          read-only:
-            type: boolean
-            category: optional
-            description: Denotes read only partition
-            generation: define
-
-base_label: FLASH_AREA
-
-...
+sub-node:
+    properties:
+       label:
+          category: required
+          type: string
+          category: optional
+          description: Human readable string describing the device (used by Zephyr for API name)
+       read-only:
+          type: boolean
+          category: optional
+          description: if the partition is read-only or not
+       reg:
+          type: array
+          description: register space
+          category: required

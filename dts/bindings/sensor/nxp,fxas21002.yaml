@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: FXAS21002 3-axis gyroscope
-version: 0.1
 
 description: >
     This is a representation of the FXAS21002 3-axis gyroscope sensor
@@ -20,10 +19,7 @@ properties:
     int1-gpios:
       type: compound
       category: optional
-      generation: define, use-prop-name
 
     int2-gpios:
       type: compound
       category: optional
-      generation: define, use-prop-name
-...

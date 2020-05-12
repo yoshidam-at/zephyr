@@ -31,14 +31,9 @@
 #include <zephyr.h>
 #include <kernel.h>
 #include <cmsis_os2.h>
+#include <sys/printk.h>
 
-#if defined(CONFIG_STDOUT_CONSOLE)
-#include <stdio.h>
-#else
-#include <misc/printk.h>
-#endif
-
-#include <misc/__assert.h>
+#include <sys/__assert.h>
 
 #include "phil_obj_abstract.h"
 
@@ -73,7 +68,7 @@ osSemaphoreId_t forks[NUM_PHIL];
 
 #define fork(x) (forks[x])
 
-#define STACK_SIZE 512
+#define STACK_SIZE CONFIG_CMSIS_V2_THREAD_MAX_STACK_SIZE
 static K_THREAD_STACK_ARRAY_DEFINE(stacks, NUM_PHIL, STACK_SIZE);
 static osThreadAttr_t thread_attr[] = {
 	{
@@ -115,19 +110,8 @@ static osThreadAttr_t thread_attr[] = {
 };
 
 
-/*
- * There are multiple threads doing printfs and they may conflict.
- * Therefore use puts() instead of printf().
- */
-#if defined(CONFIG_STDOUT_CONSOLE)
-#define PRINTF(...) { char output[256]; \
-		      sprintf(output, __VA_ARGS__); puts(output); }
-#else
-#define PRINTF(...) printk(__VA_ARGS__)
-#endif
-
 #if DEBUG_PRINTF
-#define PR_DEBUG PRINTF
+#define PR_DEBUG printk
 #else
 #define PR_DEBUG(...)
 #endif
@@ -137,7 +121,7 @@ static osThreadAttr_t thread_attr[] = {
 static void set_phil_state_pos(int id)
 {
 #if !DEBUG_PRINTF
-	PRINTF("\x1b[%d;%dH", id + 1, 1);
+	printk("\x1b[%d;%dH", id + 1, 1);
 #endif
 }
 
@@ -148,18 +132,18 @@ static void print_phil_state(int id, const char *fmt, s32_t delay)
 
 	set_phil_state_pos(id);
 
-	PRINTF("Philosopher %d [%s:%s%d] ",
+	printk("Philosopher %d [%s:%s%d] ",
 	       id, prio < 0 ? "C" : "P",
 	       prio < 0 ? "" : " ",
 	       prio);
 
 	if (delay) {
-		PRINTF(fmt, delay < 1000 ? " " : "", delay);
+		printk(fmt, delay < 1000 ? " " : "", delay);
 	} else {
-		PRINTF(fmt, "");
+		printk(fmt, "");
 	}
 
-	PRINTF("\n");
+	printk("\n");
 }
 
 static s32_t get_random_delay(int id, int period_in_ms)
@@ -187,7 +171,7 @@ void philosopher(void *id)
 	fork_t fork1;
 	fork_t fork2;
 
-	int my_id = (int)id;
+	int my_id = POINTER_TO_INT(id);
 
 	/* Djkstra's solution: always pick up the lowest numbered fork first */
 	if (is_last_philosopher(my_id)) {
@@ -242,7 +226,7 @@ static void start_threads(void)
 	for (int i = 0; i < NUM_PHIL; i++) {
 		int prio = new_prio(i);
 		thread_attr[i].priority = prio;
-		osThreadNew(philosopher, (void *)i, &thread_attr[i]);
+		osThreadNew(philosopher, INT_TO_POINTER(i), &thread_attr[i]);
 	}
 }
 
@@ -259,7 +243,7 @@ static void start_threads(void)
 static void display_demo_description(void)
 {
 #if !DEBUG_PRINTF
-	PRINTF(DEMO_DESCRIPTION);
+	printk(DEMO_DESCRIPTION);
 #endif
 }
 
@@ -268,4 +252,11 @@ void main(void)
 	display_demo_description();
 	init_objects();
 	start_threads();
+
+#ifdef CONFIG_COVERAGE
+	/* Wait a few seconds before main() exit, giving the sample the
+	 * opportunity to dump some output before coverage data gets emitted
+	 */
+	k_sleep(5000);
+#endif
 }

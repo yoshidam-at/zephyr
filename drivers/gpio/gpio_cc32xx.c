@@ -6,10 +6,10 @@
 #include <errno.h>
 
 #include <device.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 #include <init.h>
 #include <kernel.h>
-#include <sys_io.h>
+#include <sys/sys_io.h>
 
 /* Driverlib includes */
 #include <inc/hw_types.h>
@@ -129,7 +129,7 @@ static int gpio_cc32xx_manage_callback(struct device *dev,
 {
 	struct gpio_cc32xx_data *data = DEV_DATA(dev);
 
-	return _gpio_manage_callback(&data->callbacks, callback, set);
+	return gpio_manage_callback(&data->callbacks, callback, set);
 }
 
 
@@ -179,7 +179,7 @@ static void gpio_cc32xx_port_isr(void *arg)
 	MAP_GPIOIntClear(config->port_base, int_status);
 
 	/* Call the registered callbacks */
-	_gpio_fire_callbacks(&data->callbacks, (struct device *)dev,
+	gpio_fire_callbacks(&data->callbacks, (struct device *)dev,
 			     enabled_int);
 
 	/* Re-enable the interrupts */

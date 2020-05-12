@@ -6,7 +6,7 @@ toolchain:
   - zephyr
   - gnuarmemb
   - xtools
-ram: 320
+ram: 256
 flash: 1024
 supported:
   - arduino_i2c
@@ -18,3 +18,7 @@ supported:
   - pwm
   - spi
   - watchdog
+  - rtc
+  - counter
+  - can
+  - adc

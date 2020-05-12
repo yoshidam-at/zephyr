@@ -10,8 +10,8 @@
 #include <zephyr/types.h>
 #include <errno.h>
 #include <init.h>
-#include <fs.h>
-#include <misc/__assert.h>
+#include <fs/fs.h>
+#include <sys/__assert.h>
 #include <ff.h>
 
 #define FATFS_MAX_FILE_NAME 12 /* Uses 8.3 SFN */
@@ -354,6 +354,15 @@ static int fatfs_mount(struct fs_mount_t *mountp)
 
 }
 
+static int fatfs_unmount(struct fs_mount_t *mountp)
+{
+	FRESULT res;
+
+	res = f_mount(NULL, &mountp->mnt_point[1], 1);
+
+	return translate_error(res);
+}
+
 /* File system interface */
 static struct fs_file_system_t fatfs_fs = {
 	.open = fatfs_open,
@@ -368,6 +377,7 @@ static struct fs_file_system_t fatfs_fs = {
 	.readdir = fatfs_readdir,
 	.closedir = fatfs_closedir,
 	.mount = fatfs_mount,
+	.unmount = fatfs_unmount,
 	.unlink = fatfs_unlink,
 	.rename = fatfs_rename,
 	.mkdir = fatfs_mkdir,

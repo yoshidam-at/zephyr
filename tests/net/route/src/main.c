@@ -15,7 +15,7 @@ LOG_MODULE_REGISTER(net_test, CONFIG_NET_ROUTE_LOG_LEVEL);
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <linker/sections.h>
 
 #include <tc_util.h>
@@ -112,7 +112,7 @@ static u8_t *net_route_get_mac(struct device *dev)
 	}
 
 	route->ll_addr.addr = route->mac_addr;
-	route->ll_addr.len = 6;
+	route->ll_addr.len = 6U;
 
 	return route->mac_addr;
 }

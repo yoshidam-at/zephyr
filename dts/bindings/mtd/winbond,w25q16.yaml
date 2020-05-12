@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: SPI NOR FLASH
-version: 0.1
 
 description: >
     This binding gives a base representation of SPI slave NOR FLASH
@@ -16,5 +15,3 @@ inherits:
 properties:
     compatible:
       constraint: "winbond,w25q16"
-
-...

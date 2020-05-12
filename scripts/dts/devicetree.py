@@ -5,10 +5,17 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+# NOTE: This file is part of the old device tree scripts, which will be removed
+# later. They are kept to generate some legacy #defines via the
+# --deprecated-only flag.
+#
+# The new scripts are gen_defines.py, edtlib.py, and dtlib.py.
+
 # vim: ai:ts=4:sw=4
 
 import sys
 import pprint
+import re
 
 def read_until(line, fd, end):
     out = [line]
@@ -113,7 +120,7 @@ def parse_value(value):
     if value[0] == '"':
         return parse_values(value, '"', '"', ',')
     if value[0] == '[':
-        return parse_values(value, '[', ']', ' ')
+        return list(bytes.fromhex(value[1:value.find(']')]))
 
     if value[0] == '&':
         return {'ref': value[1:]}
@@ -123,6 +130,9 @@ def parse_value(value):
             return int(value, 16)
         if value[0] == '0':
             return int(value, 8)
+        # Match alpha numeric values
+        if re.match("\w", value):
+            return value
         return int(value, 10)
 
     return value
@@ -197,13 +207,13 @@ def parse_file(fd, ignore_dts_version=False):
             continue
 
         if line.startswith('/include/ '):
-            tag, filename = line.split()
-            with open(filename.strip()[1:-1], "r") as new_fd:
+            _, filename = line.split()
+            with open(filename.strip()[1:-1], encoding="utf-8") as new_fd:
                 nodes.update(parse_file(new_fd, True))
         elif line == '/dts-v1/;':
             has_v1_tag = True
         elif line.startswith('/memreserve/ ') and line.endswith(';'):
-            tag, start, end = line.split()
+            _, start, end = line.split()
             start = int(start, 16)
             end = int(end[:-1], 16)
             label = "reserved_memory_0x%x_0x%x" % (start, end)
@@ -212,7 +222,7 @@ def parse_file(fd, ignore_dts_version=False):
                 'reg': [start, end],
                 'label': label,
                 'addr': start,
-                'name': build_node_name(name, start)
+                'name': '<memreserve>'
             }
         elif line.endswith('{'):
             if not has_v1_tag and not ignore_dts_version:
@@ -238,7 +248,7 @@ def dump_refs(name, value, indent=0):
 
 def dump_all_refs(name, props, indent=0):
     out = []
-    for key, value in props.items():
+    for value in props.values():
         out.extend(dump_refs(name, value, indent))
     return out
 
@@ -260,15 +270,16 @@ def dump_to_dot(nodes, indent=0, start_string='digraph devicetree', name=None):
         print("%s\"%s\";" % (spaces, name))
 
     ref_list = []
-    for key, value in nodes.items():
-        if value.get('children'):
-            refs = dump_to_dot(value['children'], indent + 1, next_subgraph(), get_dot_node_name(value))
+    for node in nodes.values():
+        if node['children']:
+            refs = dump_to_dot(node['children'], indent + 1, next_subgraph(),
+                               get_dot_node_name(node))
             ref_list.extend(refs)
         else:
-            print("%s\"%s\";" % (spaces, get_dot_node_name(value)))
+            print("%s\"%s\";" % (spaces, get_dot_node_name(node)))
 
-    for key, value in nodes.items():
-        refs = dump_all_refs(get_dot_node_name(value), value.get('props', {}), indent)
+    for node in nodes.values():
+        refs = dump_all_refs(get_dot_node_name(node), node['props'], indent)
         ref_list.extend(refs)
 
     if start_string.startswith("digraph"):
@@ -289,7 +300,7 @@ def main(args):
     else:
         formatter = lambda nodes: pprint.pprint(nodes, indent=2)
 
-    with open(args[1], "r") as fd:
+    with open(args[1], encoding="utf-8") as fd:
         formatter(parse_file(fd))
 
     return 0

@@ -26,8 +26,9 @@ systems.
 
 The management subsystem is split in two different locations in the Zephyr tree:
 
-* :file:`ext/lib/mgmt/mcumgr/` contains a clean import of the MCUmgr project
-* :file:`subsys/mgmt/` contains the Zephyr-specific bindings to MCUmgr
+* `zephyrproject-rtos/mcumgr repo <https://github.com/zephyrproject-rtos/mcumgr>`_
+  contains a clean import of the MCUmgr project
+* :zephyr_file:`subsys/mgmt/` contains the Zephyr-specific bindings to MCUmgr
 
 Additionally there is a :ref:`sample <smp_svr_sample>` that provides management
 functionality over BLE and serial.

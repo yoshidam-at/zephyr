@@ -54,6 +54,15 @@
 			gpios = <&gpio5 0 GPIO_INT_ACTIVE_LOW>;
 		};
 	};
+
+	panel {
+		compatible = "rocktech,rk043fn02h-ct";
+		port {
+			lcd_panel_in: endpoint {
+				remote-endpoint = <&lcd_panel_out>;
+			};
+		};
+	};
 };
 
 arduino_serial: &uart3 {};
@@ -63,12 +72,21 @@ arduino_serial: &uart3 {};
 	hyperflash0: hyperflash@0 {
 		compatible = "cypress,s26ks512s";
 		reg = <0>;
-		status = "ok";
+		status = "okay";
+	};
+};
+
+&lcdif1 {
+	status = "okay";
+	port {
+		lcd_panel_out: endpoint {
+			remote-endpoint = <&lcd_panel_in>;
+		};
 	};
 };
 
 &i2c1 {
-	status = "ok";
+	status = "okay";
 
 	fxos8700@1f {
 		compatible = "nxp,fxos8700";
@@ -86,17 +104,27 @@ arduino_serial: &uart3 {};
 };
 
 &uart1 {
-	status = "ok";
+	status = "okay";
 	current-speed = <115200>;
 };
 
 &spi3 {
-	status = "ok";
+	status = "okay";
 };
 
 &eth {
-	status = "ok";
+	status = "okay";
 	ptp {
-		status = "ok";
+		status = "okay";
 	};
+};
+
+&usbd1 {
+	status = "okay";
+};
+
+&usdhc1 {
+	status = "okay";
+	pwr-gpios = <&gpio1 5 0>;
+	cd-gpios = <&gpio2 28 0>;
 };

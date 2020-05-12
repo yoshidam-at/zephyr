@@ -14,7 +14,7 @@
 #include <zephyr.h>
 #include <device.h>
 #include <soc.h>
-#include <dma.h>
+#include <drivers/dma.h>
 
 #include <audio/dmic.h>
 #include "intel_dmic.h"
@@ -115,9 +115,6 @@ struct dmic_configuration {
 #define DMIC_REG_UPD(reg, mask, val)		\
 	DMIC_REG_WR((reg), (DMIC_REG_RD((reg)) & ~(mask)) | ((val) & (mask)))
 
-#define DCACHE_INVALIDATE(addr, size)		\
-	xthal_dcache_region_invalidate(addr, size)
-
 struct _stream_data {
 	struct k_msgq in_queue;
 	struct k_msgq out_queue;
@@ -160,8 +157,9 @@ int find_equal_int16(s16_t idx[], s16_t vec[], int n, int vec_length,
 	for (i = 0; i < vec_length; i++) {
 		if (vec[i] == n) {
 			idx[nresults++] = i;
-			if (nresults == max_results)
+			if (nresults == max_results) {
 				break;
+			}
 		}
 	}
 
@@ -174,8 +172,9 @@ s16_t find_min_int16(s16_t vec[], int vec_length)
 	int i;
 	int min = vec[0];
 
-	for (i = 1; i < vec_length; i++)
+	for (i = 1; i < vec_length; i++) {
 		min = (vec[i] < min) ? vec[i] : min;
+	}
 
 	return min;
 }
@@ -241,7 +240,7 @@ static void find_modes(struct decim_modes *modes,
 	/* The FIFO is not requested if sample rate is set to zero. Just
 	 * return in such case with num_of_modes as zero.
 	 */
-	if (fs == 0) {
+	if (fs == 0U) {
 		return;
 	}
 
@@ -421,8 +420,9 @@ static struct pdm_decim *get_fir(struct dmic_configuration *cfg, int mfir)
 	struct pdm_decim *fir = NULL;
 	struct pdm_decim **fir_list;
 
-	if (mfir <= 0)
+	if (mfir <= 0) {
 		return fir;
+	}
 
 	cic_fs = DMIC_HW_IOCLK / cfg->clkdiv / cfg->mcic;
 	fs = cic_fs / mfir;
@@ -470,8 +470,9 @@ static int fir_coef_scale(s32_t *fir_scale, int *fir_shift, int add_shift,
 	/* Scale max. tap value with FIR gain. */
 	new_amax = Q_MULTSR_32X32((s64_t)amax, fir_gain, 31,
 		DMIC_FIR_SCALE_Q, DMIC_FIR_SCALE_Q);
-	if (new_amax <= 0)
+	if (new_amax <= 0) {
 		return -EINVAL;
+	}
 
 	/* Get left shifts count to normalize the fractional value as 32 bit.
 	 * We need right shifts count for scaling so need to invert. The
@@ -486,14 +487,16 @@ static int fir_coef_scale(s32_t *fir_scale, int *fir_shift, int add_shift,
 	 */
 	*fir_shift = -shift + add_shift;
 	if (*fir_shift < DMIC_HW_FIR_SHIFT_MIN ||
-		*fir_shift > DMIC_HW_FIR_SHIFT_MAX)
+		*fir_shift > DMIC_HW_FIR_SHIFT_MAX) {
 		return -EINVAL;
+	}
 
 	/* Compensate shift into FIR coef scaler and store as Q4.20. */
-	if (shift < 0)
+	if (shift < 0) {
 		*fir_scale = (fir_gain << -shift);
-	else
+	} else {
 		*fir_scale = (fir_gain >> shift);
+	}
 
 	return 0;
 }
@@ -502,7 +505,7 @@ static int fir_coef_scale(s32_t *fir_scale, int *fir_shift, int add_shift,
  * decimator. For the settings chosen for FIFOs A and B output a lookup
  * is done for FIR coefficients from the included coefficients tables.
  * For some decimation factors there may be several length coefficient sets.
- * It is due to possible restruction of decimation engine cycles per given
+ * It is due to possible restriction of decimation engine cycles per given
  * sample rate. If the coefficients length is exceeded the lookup continues.
  * Therefore the list of coefficient set must present the filters for a
  * decimation factor in decreasing length order.
@@ -544,10 +547,11 @@ static int select_mode(struct dmic_configuration *cfg,
 	 * factor in 1st element. If FIR A is not used get decimation factors
 	 * from FIR B instead.
 	 */
-	if (modes->mfir_a[0] > 0)
+	if (modes->mfir_a[0] > 0) {
 		mfir = modes->mfir_a;
-	else
+	} else {
 		mfir = modes->mfir_b;
+	}
 
 	mmin = find_min_int16(mfir, modes->num_of_modes);
 	count = find_equal_int16(idx, mfir, mmin, modes->num_of_modes, 0);
@@ -602,10 +606,11 @@ static int select_mode(struct dmic_configuration *cfg,
 	 * values.
 	 */
 	fir_in_max = (1 << (DMIC_HW_BITS_FIR_INPUT - 1));
-	if (cfg->cic_shift >= 0)
+	if (cfg->cic_shift >= 0) {
 		cic_out_max = g_cic >> cfg->cic_shift;
-	else
+	} else {
 		cic_out_max = g_cic << -cfg->cic_shift;
+	}
 
 	gain_to_fir = (s32_t)((((s64_t)fir_in_max) << DMIC_FIR_SCALE_Q) /
 		cic_out_max);
@@ -680,7 +685,7 @@ static int source_ipm_helper(struct pdm_chan_cfg *config, u32_t *source_mask,
 			continue;
 		}
 
-		if ((*controller_mask & BIT(pdm_ix)) == 0) {
+		if ((*controller_mask & BIT(pdm_ix)) == 0U) {
 			*controller_mask |= BIT(pdm_ix);
 			*source_mask |= pdm_ix << (ipm << 2);
 			ipm++;
@@ -699,7 +704,7 @@ static int source_ipm_helper(struct pdm_chan_cfg *config, u32_t *source_mask,
 		 * if R channel mic was requested first
 		 * set the controller to swap the channels
 		 */
-		if ((pdm_lr_mask & BIT(PDM_CHAN_LEFT + (pdm_ix << 1))) == 0) {
+		if ((pdm_lr_mask & BIT(PDM_CHAN_LEFT + (pdm_ix << 1))) == 0U) {
 			*swap_mask |= BIT(pdm_ix);
 		}
 	}
@@ -752,9 +757,9 @@ static int configure_registers(struct device *dev,
 	u32_t source_mask;
 
 	/* OUTCONTROL0 and OUTCONTROL1 */
-	of0 = (config->streams[0].pcm_width == 32) ? 2 : 0;
+	of0 = (config->streams[0].pcm_width == 32U) ? 2 : 0;
 	if (config->channel.req_num_streams > 1) {
-		of1 = (config->streams[1].pcm_width == 32) ? 2 : 0;
+		of1 = (config->streams[1].pcm_width == 32U) ? 2 : 0;
 	} else {
 		of1 = 0;
 	}
@@ -795,7 +800,7 @@ static int configure_registers(struct device *dev,
 	 * for starting correct parts of the HW.
 	 */
 	for (i = 0; i < DMIC_HW_CONTROLLERS; i++) {
-		if ((controller_mask & BIT(i)) == 0) {
+		if ((controller_mask & BIT(i)) == 0U) {
 			/* controller is not enabled */
 			continue;
 		}
@@ -805,7 +810,7 @@ static int configure_registers(struct device *dev,
 				BIT(PDM_CHAN_RIGHT)) << (i << 1);
 		} else {
 			dmic_private.mic_en_mask |=
-				((swap_mask & BIT(i)) == 0) ?
+				((swap_mask & BIT(i)) == 0U) ?
 				BIT(PDM_CHAN_LEFT) << (i << 1) :
 				BIT(PDM_CHAN_RIGHT) << (i << 1);
 		}
@@ -1017,7 +1022,7 @@ static int dmic_set_config(struct device *dev, struct dmic_cfg *config)
 	LOG_DBG("num_chan %u", config->channel.req_num_chan);
 	LOG_DBG("req_num_streams %u", config->channel.req_num_streams);
 
-	if (config->channel.req_num_streams == 0) {
+	if (config->channel.req_num_streams == 0U) {
 		LOG_ERR("req_num_streams is 0");
 		return -EINVAL;
 	}
@@ -1213,7 +1218,7 @@ static void dmic_start(struct device *dev)
 	/* Clear soft reset for all/used PDM controllers. This should
 	 * start capture in sync.
 	 */
-	LOG_DBG("Releasing soft reset for all PDM controlers");
+	LOG_DBG("Releasing soft reset for all PDM controllers");
 	for (i = 0; i < DMIC_HW_CONTROLLERS; i++) {
 		DMIC_REG_UPD(CIC_CONTROL(i), CIC_CONTROL_SOFT_RESET_BIT, 0);
 	}
@@ -1284,7 +1289,7 @@ static int dmic_trigger_device(struct device *dev, enum dmic_trigger cmd)
 
 static inline u8_t dmic_parse_clk_skew_map(u32_t skew_map, u8_t pdm)
 {
-	return (u8_t)((skew_map >> ((pdm & BIT_MASK(3)) * 4)) & BIT_MASK(4));
+	return (u8_t)((skew_map >> ((pdm & BIT_MASK(3)) * 4U)) & BIT_MASK(4));
 }
 
 static int dmic_initialize_device(struct device *dev)
@@ -1346,7 +1351,7 @@ static int dmic_read_device(struct device *dev, u8_t stream,
 		LOG_ERR("No buffers in stream %u out_queue", stream);
 	} else {
 		*size = dmic_private.streams[stream].block_size;
-		DCACHE_INVALIDATE(*buffer, *size);
+		SOC_DCACHE_INVALIDATE(*buffer, *size);
 	}
 
 	return ret;
@@ -1394,7 +1399,7 @@ int dmic_configure_dma(struct pcm_stream_cfg *config, u8_t num_streams)
 
 		dma_block.source_address = (u32_t)NULL;
 		dma_block.dest_address = (u32_t)NULL;
-		dma_block.block_size = 0;
+		dma_block.block_size = 0U;
 		dma_block.next_block = NULL;
 
 		ret = dma_config(dmic_private.dma_dev, channel, &dma_cfg);

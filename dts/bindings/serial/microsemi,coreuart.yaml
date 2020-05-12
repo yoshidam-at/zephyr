@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: SIFIVE UART
-version: 0.1
 
 description: >
     This binding gives a base representation of the SIFIVE UART
@@ -15,22 +14,7 @@ inherits:
 
 properties:
     compatible:
-      type: string
-      category: required
-      description: compatible strings
       constraint: "microsemi,coreuart"
-      generation: define
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
-
-    interrupts:
-      type: array
-      category: required
-      description: required interrupts
-      generation: define
-
-...
