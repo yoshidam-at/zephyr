@@ -42,18 +42,18 @@
 #ifdef CONFIG_ARC_HAS_SECURE
 #ifdef CONFIG_ARC_SECURE_FIRMWARE
 	lr r13, [_ARC_V2_SEC_U_SP]
-	st r13, [sp, ___callee_saved_stack_t_user_sp_OFFSET]
+	st_s r13, [sp, ___callee_saved_stack_t_user_sp_OFFSET]
 	lr r13, [_ARC_V2_SEC_K_SP]
-	st r13, [sp, ___callee_saved_stack_t_kernel_sp_OFFSET]
+	st_s r13, [sp, ___callee_saved_stack_t_kernel_sp_OFFSET]
 #else
 	lr r13, [_ARC_V2_USER_SP]
-	st r13, [sp, ___callee_saved_stack_t_user_sp_OFFSET]
+	st_s r13, [sp, ___callee_saved_stack_t_user_sp_OFFSET]
 	lr r13, [_ARC_V2_KERNEL_SP]
-	st r13, [sp, ___callee_saved_stack_t_kernel_sp_OFFSET]
+	st_s r13, [sp, ___callee_saved_stack_t_kernel_sp_OFFSET]
 #endif /* CONFIG_ARC_SECURE_FIRMWARE */
 #else
 	lr r13, [_ARC_V2_USER_SP]
-	st r13, [sp, ___callee_saved_stack_t_user_sp_OFFSET]
+	st_s r13, [sp, ___callee_saved_stack_t_user_sp_OFFSET]
 #endif
 #endif
 	st r30, [sp, ___callee_saved_stack_t_r30_OFFSET]
@@ -64,7 +64,7 @@
 #endif
 
 #ifdef CONFIG_FP_SHARING
-	ld r13, [r2, ___thread_base_t_user_options_OFFSET]
+	ld_s r13, [r2, ___thread_base_t_user_options_OFFSET]
 	/* K_FP_REGS is bit 1 */
 	bbit0 r13, 1, 1f
 	lr r13, [_ARC_V2_FPU_STATUS]
@@ -100,7 +100,7 @@
 #endif
 
 #ifdef CONFIG_FP_SHARING
-	ld r13, [r2, ___thread_base_t_user_options_OFFSET]
+	ld_s r13, [r2, ___thread_base_t_user_options_OFFSET]
 	/* K_FP_REGS is bit 1 */
 	bbit0 r13, 1, 2f
 
@@ -125,18 +125,18 @@
 #ifdef CONFIG_USERSPACE
 #ifdef CONFIG_ARC_HAS_SECURE
 #ifdef CONFIG_ARC_SECURE_FIRMWARE
-	ld r13, [sp, ___callee_saved_stack_t_user_sp_OFFSET]
+	ld_s r13, [sp, ___callee_saved_stack_t_user_sp_OFFSET]
 	sr r13, [_ARC_V2_SEC_U_SP]
-	ld r13, [sp, ___callee_saved_stack_t_kernel_sp_OFFSET]
+	ld_s r13, [sp, ___callee_saved_stack_t_kernel_sp_OFFSET]
 	sr r13, [_ARC_V2_SEC_K_SP]
 #else
 	ld_s r13, [sp, ___callee_saved_stack_t_user_sp_OFFSET]
 	sr r13, [_ARC_V2_USER_SP]
-	ld r13, [sp, ___callee_saved_stack_t_kernel_sp_OFFSET]
+	ld_s r13, [sp, ___callee_saved_stack_t_kernel_sp_OFFSET]
 	sr r13, [_ARC_V2_KERNEL_SP]
 #endif /* CONFIG_ARC_SECURE_FIRMWARE */
 #else
-	ld r13, [sp, ___callee_saved_stack_t_user_sp_OFFSET]
+	ld_s r13, [sp, ___callee_saved_stack_t_user_sp_OFFSET]
 	sr r13, [_ARC_V2_USER_SP]
 #endif
 #endif
@@ -258,7 +258,7 @@
 	 * The pc and status32 values will still be on the stack. We cannot
 	 * pop them yet because the callers of _pop_irq_stack_frame must reload
 	 * status32 differently depending on the execution context they are
-	 * running in (z_arch_switch(), firq or exception).
+	 * running in (arch_switch(), firq or exception).
 	 */
 	add_s sp, sp, ___isf_t_SIZEOF
 
@@ -363,6 +363,18 @@
 	mov \irq_sp, _kernel
 	ld \irq_sp, [\irq_sp, _kernel_offset_to_irq_stack]
 #endif
+.endm
+
+/* macro to push aux reg through reg */
+.macro PUSHAX reg aux
+	lr \reg, [\aux]
+	st.a \reg, [sp, -4]
+.endm
+
+/* macro to pop aux reg through reg */
+.macro POPAX reg aux
+	ld.ab \reg, [sp, 4]
+	sr \reg, [\aux]
 .endm
 
 #endif /* _ASMLANGUAGE */

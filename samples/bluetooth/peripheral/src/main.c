@@ -194,7 +194,8 @@ BT_GATT_SERVICE_DEFINE(vnd_svc,
 			       BT_GATT_PERM_READ_ENCRYPT |
 			       BT_GATT_PERM_WRITE_ENCRYPT,
 			       read_vnd, write_vnd, vnd_value),
-	BT_GATT_CCC(vnd_ccc_cfg_changed),
+	BT_GATT_CCC(vnd_ccc_cfg_changed,
+		    BT_GATT_PERM_READ | BT_GATT_PERM_WRITE_ENCRYPT),
 	BT_GATT_CHARACTERISTIC(&vnd_auth_uuid.uuid,
 			       BT_GATT_CHRC_READ | BT_GATT_CHRC_WRITE,
 			       BT_GATT_PERM_READ_AUTHEN |
@@ -244,12 +245,9 @@ static struct bt_conn_cb conn_callbacks = {
 	.disconnected = disconnected,
 };
 
-static void bt_ready(int err)
+static void bt_ready(void)
 {
-	if (err) {
-		printk("Bluetooth init failed (err %d)\n", err);
-		return;
-	}
+	int err;
 
 	printk("Bluetooth initialized\n");
 
@@ -322,11 +320,13 @@ void main(void)
 {
 	int err;
 
-	err = bt_enable(bt_ready);
+	err = bt_enable(NULL);
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
 		return;
 	}
+
+	bt_ready();
 
 	bt_conn_cb_register(&conn_callbacks);
 	bt_conn_auth_cb_register(&auth_cb_display);

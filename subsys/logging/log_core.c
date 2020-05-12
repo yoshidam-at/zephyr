@@ -51,6 +51,8 @@ struct log_strdup_buf {
 #define LOG_STRDUP_POOL_BUFFER_SIZE \
 	(sizeof(struct log_strdup_buf) * CONFIG_LOG_STRDUP_BUF_COUNT)
 
+K_SEM_DEFINE(log_process_thread_sem, 0, 1);
+
 static const char *log_strdup_fail_msg = "<log_strdup alloc failed>";
 struct k_mem_slab log_strdup_pool;
 static u8_t __noinit __aligned(sizeof(void *))
@@ -66,6 +68,7 @@ static k_tid_t proc_tid;
 static u32_t log_strdup_in_use;
 static u32_t log_strdup_max;
 static u32_t log_strdup_longest;
+static struct k_timer log_process_thread_timer;
 
 static u32_t dummy_timestamp(void);
 static timestamp_get_t timestamp_func = dummy_timestamp;
@@ -78,23 +81,7 @@ static u32_t dummy_timestamp(void)
 	return 0;
 }
 
-/**
- * @brief Count number of string format specifiers (%s).
- *
- * Result is stored as the mask (argument n is n'th bit). Bit is set if %s was
- * found.
- *
- * @note Algorithm does not take into account complex format specifiers as they
- *	 hardly used in log messages and including them would significantly
- *	 extended this function which is called on every log message is feature
- *	 is enabled.
- *
- * @param str String.
- * @param nargs Number of arguments in the string.
- *
- * @return Mask with %s format specifiers found.
- */
-static u32_t count_s(const char *str, u32_t nargs)
+u32_t z_log_get_s_mask(const char *str, u32_t nargs)
 {
 	char curr;
 	bool arm = false;
@@ -106,7 +93,7 @@ static u32_t count_s(const char *str, u32_t nargs)
 	while ((curr = *str++) && arg < nargs) {
 		if (curr == '%') {
 			arm = !arm;
-		} else if (arm && isalpha(curr)) {
+		} else if (arm && isalpha((int)curr)) {
 			if (curr == 's') {
 				mask |= BIT(arg);
 			}
@@ -159,7 +146,8 @@ static bool is_rodata(const void *addr)
  */
 static void detect_missed_strdup(struct log_msg *msg)
 {
-#define ERR_MSG	"argument %d in log message \"%s\" missing log_strdup()."
+#define ERR_MSG	"argument %d in source %s log message \"%s\" missing" \
+		"log_strdup()."
 	u32_t idx;
 	const char *str;
 	const char *msg_str;
@@ -170,17 +158,21 @@ static void detect_missed_strdup(struct log_msg *msg)
 	}
 
 	msg_str = log_msg_str_get(msg);
-	mask = count_s(msg_str, log_msg_nargs_get(msg));
+	mask = z_log_get_s_mask(msg_str, log_msg_nargs_get(msg));
 
 	while (mask) {
 		idx = 31 - __builtin_clz(mask);
 		str = (const char *)log_msg_arg_get(msg, idx);
 		if (!is_rodata(str) && !log_is_strdup(str) &&
 			(str != log_strdup_fail_msg)) {
+			const char *src_name =
+				log_source_name_get(CONFIG_LOG_DOMAIN_ID,
+						    log_msg_source_id_get(msg));
+
 			if (IS_ENABLED(CONFIG_ASSERT)) {
-				__ASSERT(0, ERR_MSG, idx, msg_str);
+				__ASSERT(0, ERR_MSG, idx, src_name, msg_str);
 			} else {
-				LOG_ERR(ERR_MSG, idx, msg_str);
+				LOG_ERR(ERR_MSG, idx, src_name, msg_str);
 			}
 		}
 
@@ -209,10 +201,14 @@ static inline void msg_finalize(struct log_msg *msg,
 		key = irq_lock();
 		(void)log_process(false);
 		irq_unlock(key);
+	} else if (proc_tid != NULL && buffered_cnt == 1) {
+		k_timer_start(&log_process_thread_timer,
+			CONFIG_LOG_PROCESS_THREAD_SLEEP_MS, K_NO_WAIT);
 	} else if (CONFIG_LOG_PROCESS_TRIGGER_THRESHOLD) {
 		if ((buffered_cnt == CONFIG_LOG_PROCESS_TRIGGER_THRESHOLD) &&
 		    (proc_tid != NULL)) {
-			k_wakeup(proc_tid);
+			k_timer_stop(&log_process_thread_timer);
+			k_sem_give(&log_process_thread_sem);
 		}
 	}
 }
@@ -302,15 +298,15 @@ void log_n(const char *str,
 	}
 }
 
-void log_hexdump(const char *str,
-		 const u8_t *data,
-		 u32_t length,
+void log_hexdump(const char *str, const void *data, u32_t length,
 		 struct log_msg_ids src_level)
 {
 	if (IS_ENABLED(CONFIG_LOG_FRONTEND)) {
-		log_frontend_hexdump(str, data, length, src_level);
+		log_frontend_hexdump(str, (const u8_t *)data, length,
+				     src_level);
 	} else {
-		struct log_msg *msg = log_msg_hexdump_create(str, data, length);
+		struct log_msg *msg =
+			log_msg_hexdump_create(str, (const u8_t *)data, length);
 
 		if (msg == NULL) {
 			return;
@@ -320,10 +316,8 @@ void log_hexdump(const char *str,
 	}
 }
 
-int log_printk(const char *fmt, va_list ap)
+void log_printk(const char *fmt, va_list ap)
 {
-	int length = 0;
-
 	if (IS_ENABLED(CONFIG_LOG_PRINTK)) {
 		union {
 			struct log_msg_ids structure;
@@ -337,8 +331,7 @@ int log_printk(const char *fmt, va_list ap)
 		if (_is_user_context()) {
 			u8_t str[CONFIG_LOG_PRINTK_MAX_STRING_LENGTH + 1];
 
-			length = vsnprintk(str, sizeof(str), fmt, ap);
-			length = MIN(length, sizeof(str));
+			vsnprintk(str, sizeof(str), fmt, ap);
 
 			z_log_string_from_user(src_level_union.value, str);
 		} else if (IS_ENABLED(CONFIG_LOG_IMMEDIATE)) {
@@ -346,20 +339,19 @@ int log_printk(const char *fmt, va_list ap)
 		} else {
 			u8_t str[CONFIG_LOG_PRINTK_MAX_STRING_LENGTH + 1];
 			struct log_msg *msg;
+			int length;
 
 			length = vsnprintk(str, sizeof(str), fmt, ap);
 			length = MIN(length, sizeof(str));
 
 			msg = log_msg_hexdump_create(NULL, str, length);
 			if (msg == NULL) {
-				return 0;
+				return;
 			}
 
 			msg_finalize(msg, src_level_union.structure);
 		}
 	}
-
-	return length;
 }
 
 /** @brief Count number of arguments in formatted string.
@@ -426,10 +418,11 @@ void log_string_sync(struct log_msg_ids src_level, const char *fmt, ...)
 }
 
 void log_hexdump_sync(struct log_msg_ids src_level, const char *metadata,
-		      const u8_t *data, u32_t len)
+		      const void *data, u32_t len)
 {
 	if (IS_ENABLED(CONFIG_LOG_FRONTEND)) {
-		log_frontend_hexdump(metadata, data, len, src_level);
+		log_frontend_hexdump(metadata, (const u8_t *)data, len,
+				     src_level);
 	} else {
 		struct log_backend const *backend;
 		u32_t timestamp = timestamp_func();
@@ -438,9 +431,9 @@ void log_hexdump_sync(struct log_msg_ids src_level, const char *metadata,
 			backend = log_backend_get(i);
 
 			if (log_backend_is_active(backend)) {
-				log_backend_put_sync_hexdump(backend, src_level,
-							timestamp, metadata,
-							data, len);
+				log_backend_put_sync_hexdump(
+					backend, src_level, timestamp, metadata,
+					(const u8_t *)data, len);
 			}
 		}
 	}
@@ -538,7 +531,7 @@ static void thread_set(k_tid_t process_tid)
 	if (CONFIG_LOG_PROCESS_TRIGGER_THRESHOLD &&
 	    process_tid &&
 	    buffered_cnt >= CONFIG_LOG_PROCESS_TRIGGER_THRESHOLD) {
-		k_wakeup(proc_tid);
+		k_sem_give(&log_process_thread_sem);
 	}
 }
 
@@ -594,7 +587,11 @@ void z_impl_log_panic(void)
 }
 
 #ifdef CONFIG_USERSPACE
-Z_SYSCALL_HANDLER0_SIMPLE_VOID(log_panic);
+void z_vrfy_log_panic(void)
+{
+	z_impl_log_panic();
+}
+#include <syscalls/log_panic_mrsh.c>
 #endif
 
 static bool msg_filter_check(struct log_backend const *backend,
@@ -677,10 +674,11 @@ bool z_impl_log_process(bool bypass)
 }
 
 #ifdef CONFIG_USERSPACE
-Z_SYSCALL_HANDLER(log_process, bypass)
+bool z_vrfy_log_process(bool bypass)
 {
-	return (u32_t)log_process((bool)(bypass));
+	return z_impl_log_process(bypass);
 }
+#include <syscalls/log_process_mrsh.c>
 #endif
 
 u32_t z_impl_log_buffered_cnt(void)
@@ -689,7 +687,11 @@ u32_t z_impl_log_buffered_cnt(void)
 }
 
 #ifdef CONFIG_USERSPACE
-Z_SYSCALL_HANDLER0_SIMPLE(log_buffered_cnt);
+u32_t z_vrfy_log_buffered_cnt(void)
+{
+	return z_impl_log_buffered_cnt();
+}
+#include <syscalls/log_buffered_cnt_mrsh.c>
 #endif
 
 void log_dropped(void)
@@ -774,7 +776,10 @@ u32_t z_impl_log_filter_set(struct log_backend const *const backend,
 }
 
 #ifdef CONFIG_USERSPACE
-Z_SYSCALL_HANDLER(log_filter_set, backend, domain_id, src_id, level)
+u32_t z_vrfy_log_filter_set(struct log_backend const *const backend,
+			    u32_t domain_id,
+			    u32_t src_id,
+			    u32_t level)
 {
 	Z_OOPS(Z_SYSCALL_VERIFY_MSG(backend == 0,
 		"Setting per-backend filters from user mode is not supported"));
@@ -788,6 +793,7 @@ Z_SYSCALL_HANDLER(log_filter_set, backend, domain_id, src_id, level)
 
 	return z_impl_log_filter_set(NULL, domain_id, src_id, level);
 }
+#include <syscalls/log_filter_set_mrsh.c>
 #endif
 
 static void backend_filter_set(struct log_backend const *const backend,
@@ -812,6 +818,14 @@ void log_backend_enable(struct log_backend const *const backend,
 	log_backend_id_set(backend, id);
 	backend_filter_set(backend, level);
 	log_backend_activate(backend, ctx);
+
+	/* Wakeup logger thread after attaching first backend. It might be
+	 * blocked with log messages pending.
+	 */
+	if (!backend_attached) {
+		k_sem_give(&log_process_thread_sem);
+	}
+
 	backend_attached = true;
 }
 
@@ -916,9 +930,8 @@ void z_impl_z_log_string_from_user(u32_t src_level_val, const char *str)
 	__ASSERT(false, "This function can be called from user mode only.");
 }
 
-Z_SYSCALL_HANDLER(z_log_string_from_user, src_level_val, user_string_ptr)
+void z_vrfy_z_log_string_from_user(u32_t src_level_val, const char *str)
 {
-	const char *str = (const char *)(user_string_ptr);
 	u8_t level, domain_id, source_id;
 	union {
 		struct log_msg_ids structure;
@@ -946,7 +959,7 @@ Z_SYSCALL_HANDLER(z_log_string_from_user, src_level_val, user_string_ptr)
 	    (level > LOG_FILTER_SLOT_GET(log_dynamic_filters_get(source_id),
 					LOG_FILTER_AGGR_SLOT_IDX))) {
 		/* Skip filtered out messages. */
-		return 0;
+		return;
 	}
 
 	/*
@@ -975,9 +988,8 @@ Z_SYSCALL_HANDLER(z_log_string_from_user, src_level_val, user_string_ptr)
 		str = log_strdup(str);
 		log_1("%s", (log_arg_t)str, src_level_union.structure);
 	}
-
-	return 0;
 }
+#include <syscalls/z_log_string_from_user_mrsh.c>
 
 void log_generic_from_user(struct log_msg_ids src_level,
 			   const char *fmt, va_list ap)
@@ -1015,11 +1027,9 @@ void z_impl_z_log_hexdump_from_user(u32_t src_level_val, const char *metadata,
 	__ASSERT(false, "This function can be called from user mode only.");
 }
 
-Z_SYSCALL_HANDLER(z_log_hexdump_from_user, src_level_val,
-		  user_metadata_ptr, user_data_ptr, len)
+void z_vrfy_z_log_hexdump_from_user(u32_t src_level_val, const char *metadata,
+				    const u8_t *data, u32_t len)
 {
-	const char *metadata = (const char *)(user_metadata_ptr);
-	const void *data = (const void *)(user_data_ptr);
 	union {
 		struct log_msg_ids structure;
 		u32_t value;
@@ -1045,7 +1055,7 @@ Z_SYSCALL_HANDLER(z_log_hexdump_from_user, src_level_val,
 	     log_dynamic_filters_get(src_level_union.structure.source_id),
 	     LOG_FILTER_AGGR_SLOT_IDX))) {
 		/* Skip filtered out messages. */
-		return 0;
+		return;
 	}
 
 	/*
@@ -1065,12 +1075,11 @@ Z_SYSCALL_HANDLER(z_log_hexdump_from_user, src_level_val,
 		metadata = log_strdup(metadata);
 		log_hexdump(metadata, data, len, src_level_union.structure);
 	}
-
-	return 0;
 }
+#include <syscalls/z_log_hexdump_from_user_mrsh.c>
 
 void log_hexdump_from_user(struct log_msg_ids src_level, const char *metadata,
-			   const u8_t *data, u32_t len)
+			   const void *data, u32_t len)
 {
 	union {
 		struct log_msg_ids structure;
@@ -1079,16 +1088,10 @@ void log_hexdump_from_user(struct log_msg_ids src_level, const char *metadata,
 
 	__ASSERT_NO_MSG(sizeof(src_level) <= sizeof(u32_t));
 	src_level_union.structure = src_level;
-	z_log_hexdump_from_user(src_level_union.value, metadata, data, len);
+	z_log_hexdump_from_user(src_level_union.value, metadata,
+				(const u8_t *)data, len);
 }
-#elif defined(CONFIG_NO_OPTIMIZATIONS)
-/*
- * With the optimizations disabled, the dead code is not removed and
- * references to functions used only by the usermode remains in the
- * object files, causing linker error. To avoid this error, here we
- * are providing stubs for affected API.
- */
-
+#else
 void z_impl_z_log_string_from_user(u32_t src_level_val, const char *str)
 {
 	ARG_UNUSED(src_level_val);
@@ -1097,7 +1100,7 @@ void z_impl_z_log_string_from_user(u32_t src_level_val, const char *str)
 	__ASSERT_NO_MSG(false);
 }
 
-void z_impl_z_log_hexdump_from_user(u32_t src_level_val, const char *metadata,
+void z_vrfy_z_log_hexdump_from_user(u32_t src_level_val, const char *metadata,
 				    const u8_t *data, u32_t len)
 {
 	ARG_UNUSED(src_level_val);
@@ -1127,7 +1130,7 @@ void log_generic_from_user(struct log_msg_ids src_level,
 }
 
 void log_hexdump_from_user(struct log_msg_ids src_level, const char *metadata,
-			   const u8_t *data, u32_t len)
+			   const void *data, u32_t len)
 {
 	ARG_UNUSED(src_level);
 	ARG_UNUSED(metadata);
@@ -1136,7 +1139,12 @@ void log_hexdump_from_user(struct log_msg_ids src_level, const char *metadata,
 
 	__ASSERT_NO_MSG(false);
 }
-#endif /* defined(CONFIG_NO_OPTIMIZATIONS) */
+#endif /* !defined(CONFIG_USERSPACE) */
+
+static void log_process_thread_timer_expiry_fn(struct k_timer *timer)
+{
+	k_sem_give(&log_process_thread_sem);
+}
 
 static void log_process_thread_func(void *dummy1, void *dummy2, void *dummy3)
 {
@@ -1147,7 +1155,7 @@ static void log_process_thread_func(void *dummy1, void *dummy2, void *dummy3)
 
 	while (true) {
 		if (log_process(false) == false) {
-			k_sleep(CONFIG_LOG_PROCESS_THREAD_SLEEP_MS);
+			k_sem_take(&log_process_thread_sem, K_FOREVER);
 		}
 	}
 }
@@ -1160,6 +1168,8 @@ static int enable_logger(struct device *arg)
 	ARG_UNUSED(arg);
 
 	if (IS_ENABLED(CONFIG_LOG_PROCESS_THREAD)) {
+		k_timer_init(&log_process_thread_timer,
+				log_process_thread_timer_expiry_fn, NULL);
 		/* start logging thread */
 		k_thread_create(&logging_thread, logging_stack,
 				K_THREAD_STACK_SIZEOF(logging_stack),

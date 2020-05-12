@@ -10,7 +10,7 @@
 #include <drivers/clock_control/nrf_clock_control.h>
 #include <drivers/timer/system_timer.h>
 #include <sys_clock.h>
-#include <nrf_rtc.h>
+#include <hal/nrf_rtc.h>
 #include <spinlock.h>
 
 #define RTC NRF_RTC1
@@ -44,7 +44,7 @@ static u32_t counter(void)
 
 /* Note: this function has public linkage, and MUST have this
  * particular name.  The platform architecture itself doesn't care,
- * but there is a test (tests/kernel/arm_irq_vector_table) that needs
+ * but there is a test (tests/arch/arm_irq_vector_table) that needs
  * to find it to it can set it in a custom vector table.  Should
  * probably better abstract that at some point (e.g. query and reset
  * it by pointer at runtime, maybe?) so we don't have this leaky
@@ -83,12 +83,12 @@ int z_clock_driver_init(struct device *device)
 
 	ARG_UNUSED(device);
 
-	clock = device_get_binding(DT_INST_0_NORDIC_NRF_CLOCK_LABEL "_32K");
+	clock = device_get_binding(DT_INST_0_NORDIC_NRF_CLOCK_LABEL);
 	if (!clock) {
 		return -1;
 	}
 
-	clock_control_on(clock, (void *)CLOCK_CONTROL_NRF_K32SRC);
+	clock_control_on(clock, CLOCK_CONTROL_NRF_SUBSYS_LF);
 
 	/* TODO: replace with counter driver to access RTC */
 	nrf_rtc_prescaler_set(RTC, 0);
@@ -105,7 +105,7 @@ int z_clock_driver_init(struct device *device)
 	nrf_rtc_task_trigger(RTC, NRF_RTC_TASK_CLEAR);
 	nrf_rtc_task_trigger(RTC, NRF_RTC_TASK_START);
 
-	if (!IS_ENABLED(TICKLESS_KERNEL)) {
+	if (!IS_ENABLED(CONFIG_TICKLESS_KERNEL)) {
 		set_comparator(counter() + CYC_PER_TICK);
 	}
 

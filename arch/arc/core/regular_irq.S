@@ -17,6 +17,7 @@
 #include <kernel_structs.h>
 #include <offsets_short.h>
 #include <toolchain.h>
+#include <linker/sections.h>
 #include <arch/cpu.h>
 #include <swap_macros.h>
 
@@ -63,7 +64,7 @@ PRE-CONTEXT-SWITCH STACK
 
          --------------------------------------
   SP ->  | Return address; PC (Program Counter), in fact value taken from
-         | BLINK register in z_arch_switch()
+         | BLINK register in arch_switch()
          --------------------------------------
          | STATUS32 value, we explicitly save it here for later usage, read-on
          --------------------------------------
@@ -233,7 +234,7 @@ SECTION_FUNC(TEXT, _rirq_enter)
 	_check_and_inc_int_nest_counter r0, r1
 
 	bne.d rirq_nest
-	mov r0, sp
+	mov_s r0, sp
 
 	_get_curr_cpu_irq_stack sp
 rirq_nest:
@@ -265,16 +266,14 @@ SECTION_FUNC(TEXT, _rirq_exit)
 	bl z_check_stack_sentinel
 #endif
 
-#ifdef CONFIG_PREEMPT_ENABLED
-
 #ifdef CONFIG_SMP
-	bl z_arch_smp_switch_in_isr
+	bl z_arc_smp_switch_in_isr
 	/* r0 points to new thread, r1 points to old thread */
-	cmp r0, 0
+	cmp_s r0, 0
 	beq _rirq_no_reschedule
-	mov r2, r1
+	mov_s r2, r1
 #else
-	mov r1, _kernel
+	mov_s r1, _kernel
 	ld_s r2, [r1, _kernel_offset_to_current]
 
 	/*
@@ -300,7 +299,16 @@ _rirq_reschedule:
 #ifdef CONFIG_ARC_SECURE_FIRMWARE
 	/* here need to remember SEC_STAT.IRM bit */
 	lr r3, [_ARC_V2_SEC_STAT]
-	push r3
+	push_s r3
+#endif
+
+#if defined(CONFIG_USERSPACE)
+/*
+ * need to remember the user/kernel status of interrupted thread
+ */
+	lr r3, [_ARC_V2_AUX_IRQ_ACT]
+	and r3, r3, 0x80000000
+	push_s r3
 #endif
 	/* _save_callee_saved_regs expects outgoing thread in r2 */
 	_save_callee_saved_regs
@@ -308,10 +316,10 @@ _rirq_reschedule:
 	st _CAUSE_RIRQ, [r2, _thread_offset_to_relinquish_cause]
 
 #ifdef CONFIG_SMP
-	mov r2, r0
+	mov_s r2, r0
 #else
 	/* incoming thread is in r0: it becomes the new 'current' */
-	mov r2, r0
+	mov_s r2, r0
 	st_s r2, [r1, _kernel_offset_to_current]
 #endif
 
@@ -330,7 +338,7 @@ _rirq_common_interrupt_swap:
 
 #if defined(CONFIG_MPU_STACK_GUARD) || defined(CONFIG_USERSPACE)
 	push_s r2
-	mov r0, r2
+	mov_s r0, r2
 	bl configure_mpu_thread
 	pop_s r2
 #endif
@@ -354,9 +362,9 @@ _rirq_common_interrupt_swap:
 	ld r3, [r2, _thread_offset_to_relinquish_cause]
 
 	breq r3, _CAUSE_RIRQ, _rirq_return_from_rirq
-	nop
+	nop_s
 	breq r3, _CAUSE_FIRQ, _rirq_return_from_firq
-	nop
+	nop_s
 
 	/* fall through */
 
@@ -394,14 +402,21 @@ _rirq_return_from_coop:
 	/* rtie will pop the rest from the stack */
 	rtie
 
-#endif /* CONFIG_PREEMPT_ENABLED */
-
 .balign 4
 _rirq_return_from_firq:
 _rirq_return_from_rirq:
+#if defined(CONFIG_USERSPACE)
+/*
+ * need to recover the user/kernel status of interrupted thread
+ */
+	pop_s r3
+	lr r2, [_ARC_V2_AUX_IRQ_ACT]
+	or r2, r2, r3
+	sr r2, [_ARC_V2_AUX_IRQ_ACT]
+#endif
 #ifdef CONFIG_ARC_SECURE_FIRMWARE
 	/* here need to recover SEC_STAT.IRM bit */
-	pop r3
+	pop_s r3
 	sflag r3
 #endif
 _rirq_no_reschedule:

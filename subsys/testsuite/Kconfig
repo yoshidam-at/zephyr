@@ -1,8 +1,5 @@
-#
 # Copyright (c) 2016 Intel Corporation
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 menu "Testing"
 
@@ -20,7 +17,6 @@ config TEST
 config TEST_SHELL
 	bool "Enable various shells for testing"
 	select GPIO_SHELL if GPIO
-	select PCI_SHELL if PCI
 	help
 	  Enable various platform and driver related shells for testing.
 
@@ -46,19 +42,25 @@ config COVERAGE
 	help
 	  This option will build your application with the -coverage option
 	  which will generate data that can be used to create coverage reports.
-	  Currently this is fully supported only on the native POSIX port.
+	  For more information see
+	  https://docs.zephyrproject.org/latest/guides/coverage.html
 
-if COVERAGE
 config COVERAGE_GCOV
 	bool "Create Coverage data from hardware platform"
-	depends on !NATIVE_APPLICATION
 	default y
+	depends on COVERAGE
+	depends on !NATIVE_APPLICATION
 	help
 	  This option will select the custom gcov library. The reports will
 	  be available over serial. This serial dump can be passed to
 	  gen_gcov_files.py which creates the required .gcda files. These
 	  can be read by gcov utility. For more details see gcovr.com .
-endif
+
+config COVERAGE_DUMP
+	bool "Dump coverage data on exit"
+	depends on COVERAGE_GCOV
+	help
+	  Dump collected coverage information to console on exit.
 
 config TEST_USERSPACE
 	bool "Indicate that this test exercises user mode"
@@ -78,6 +80,18 @@ config TEST_USERSPACE
 	  If a test *requires* that userspace be enabled in order to
 	  pass, CONFIG_ARCH_HAS_USERSPACE should be filtered in its
 	  testcase.yaml.
+
+config TEST_LOGGING_DEFAULTS
+	bool "Enable test case logging defaults"
+	depends on TEST
+	select LOG
+	select LOG_MINIMAL
+	default y
+	help
+	  Option which implements default policy of enabling logging in
+	  minimal mode for all test cases. For tests that need alternate
+	  logging configuration, or no logging at all, disable this
+	  in the project-level defconfig.
 
 config TEST_ENABLE_USERSPACE
 	bool

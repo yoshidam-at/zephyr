@@ -17,41 +17,42 @@
 #include <kernel_structs.h>
 #include <offsets_short.h>
 #include <toolchain.h>
+#include <linker/sections.h>
 #include <arch/cpu.h>
 #include <v2/irq.h>
 #include <swap_macros.h>
 
-GTEXT(z_arch_switch)
+GTEXT(arch_switch)
 
 /**
  *
  * @brief Initiate a cooperative context switch
  *
- * The z_arch_switch routine is invoked by various kernel services to effect
- * a cooperative context switch. Prior to invoking z_arch_switch, the caller
+ * The arch_switch routine is invoked by various kernel services to effect
+ * a cooperative context switch. Prior to invoking arch_switch, the caller
  * disables interrupts via irq_lock()
 
- * Given that z_arch_switch() is called to effect a cooperative context switch,
+ * Given that arch_switch() is called to effect a cooperative context switch,
  * the caller-saved integer registers are saved on the stack by the function
- * call preamble to z_arch_switch. This creates a custom stack frame that will
- * be popped when returning from z_arch_switch, but is not suitable for handling
+ * call preamble to arch_switch. This creates a custom stack frame that will
+ * be popped when returning from arch_switch, but is not suitable for handling
  * a return from an exception. Thus, the fact that the thread is pending because
- * of a cooperative call to z_arch_switch() has to be recorded via the
+ * of a cooperative call to arch_switch() has to be recorded via the
  * _CAUSE_COOP code in the relinquish_cause of the thread's k_thread structure.
  * The _rirq_exit()/_firq_exit() code will take care of doing the right thing
  * to restore the thread status.
  *
- * When z_arch_switch() is invoked, we know the decision to perform a context
+ * When arch_switch() is invoked, we know the decision to perform a context
  * switch or not has already been taken and a context switch must happen.
  *
  *
  * C function prototype:
  *
- * void z_arch_switch(void *switch_to, void **switched_from);
+ * void arch_switch(void *switch_to, void **switched_from);
  *
  */
 
-SECTION_FUNC(TEXT, z_arch_switch)
+SECTION_FUNC(TEXT, arch_switch)
 
 #ifdef CONFIG_EXECUTION_BENCHMARKING
 	push_s r0
@@ -89,7 +90,7 @@ SECTION_FUNC(TEXT, z_arch_switch)
 #ifdef CONFIG_ARC_SECURE_FIRMWARE
 	lr r3, [_ARC_V2_SEC_STAT]
 #else
-	mov r3, 0
+	mov_s r3, 0
 #endif
 	push_s r3
 #endif
@@ -113,7 +114,7 @@ SECTION_FUNC(TEXT, z_arch_switch)
 
 _switch_to_target_thread:
 
-	mov r2, r0
+	mov_s r2, r0
 
 	/* entering here, r2 contains the new current thread */
 #ifdef CONFIG_ARC_STACK_CHECKING
@@ -131,9 +132,9 @@ _switch_to_target_thread:
 	ld r3, [r2, _thread_offset_to_relinquish_cause]
 
 	breq r3, _CAUSE_RIRQ, _switch_return_from_rirq
-	nop
+	nop_s
 	breq r3, _CAUSE_FIRQ, _switch_return_from_firq
-	nop
+	nop_s
 
 	/* fall through to _switch_return_from_coop */
 
@@ -161,9 +162,19 @@ return_loc:
 _switch_return_from_rirq:
 _switch_return_from_firq:
 
+#if defined(CONFIG_USERSPACE)
+/*
+ * need to recover the user/kernel status of interrupted thread
+ */
+	pop_s r3
+	lr r2, [_ARC_V2_AUX_IRQ_ACT]
+	or r2, r2, r3
+	sr r2, [_ARC_V2_AUX_IRQ_ACT]
+#endif
+
 #ifdef CONFIG_ARC_SECURE_FIRMWARE
 	/* here need to recover SEC_STAT.IRM bit */
-	pop r3
+	pop_s r3
 	sflag r3
 #endif
 
@@ -176,9 +187,9 @@ _switch_return_from_firq:
 #endif
 
 #ifdef CONFIG_ARC_NORMAL_FIRMWARE
-	mov r0, _ARC_V2_AUX_IRQ_ACT
-	mov r1, r3
-	mov r6, ARC_S_CALL_AUX_WRITE
+	mov_s r0, _ARC_V2_AUX_IRQ_ACT
+	mov_s r1, r3
+	mov_s r6, ARC_S_CALL_AUX_WRITE
 	sjli SJLI_CALL_ARC_SECURE
 #else
 	sr r3, [_ARC_V2_AUX_IRQ_ACT]

@@ -31,6 +31,7 @@ struct openthread_context {
 };
 
 void openthread_join_success_handler(struct k_work *work);
+k_tid_t openthread_thread_id_get(void);
 
 #define OPENTHREAD_L2_CTX_TYPE struct openthread_context
 

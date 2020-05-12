@@ -102,6 +102,7 @@ static void i2c_start(struct i2c_bitbang *context)
 {
 	i2c_set_sda(context, 0);
 	i2c_delay(context->delays[T_HD_STA]);
+
 	i2c_set_scl(context, 0);
 	i2c_delay(context->delays[T_LOW]);
 }
@@ -117,9 +118,19 @@ static void i2c_repeated_start(struct i2c_bitbang *context)
 
 static void i2c_stop(struct i2c_bitbang *context)
 {
-	i2c_set_sda(context, 0);
-	i2c_delay(context->delays[T_LOW]);
 	i2c_set_scl(context, 1);
+	i2c_delay(context->delays[T_HIGH]);
+
+	if (i2c_get_sda(context)) {
+		/*
+		 * SDA is already high, so we need to make it low so that
+		 * we can create a rising edge. This means we're effectively
+		 * doing a START.
+		 */
+		i2c_delay(context->delays[T_SU_STA]);
+		i2c_set_sda(context, 0);
+		i2c_delay(context->delays[T_HD_STA]);
+	}
 	i2c_delay(context->delays[T_SU_STP]);
 	i2c_set_sda(context, 1);
 	i2c_delay(context->delays[T_BUF]); /* In case we start again too soon */
@@ -127,8 +138,8 @@ static void i2c_stop(struct i2c_bitbang *context)
 
 static void i2c_write_bit(struct i2c_bitbang *context, int bit)
 {
+	/* SDA hold time is zero, so no need for a delay here */
 	i2c_set_sda(context, bit);
-	i2c_delay(context->delays[T_LOW]);
 	i2c_set_scl(context, 1);
 	i2c_delay(context->delays[T_HIGH]);
 	i2c_set_scl(context, 0);
@@ -139,9 +150,14 @@ static bool i2c_read_bit(struct i2c_bitbang *context)
 {
 	bool bit;
 
+	/* SDA hold time is zero, so no need for a delay here */
+	i2c_set_sda(context, 1); /* Stop driving low, so slave has control */
+
 	i2c_set_scl(context, 1);
 	i2c_delay(context->delays[T_HIGH]);
+
 	bit = i2c_get_sda(context);
+
 	i2c_set_scl(context, 0);
 	i2c_delay(context->delays[T_LOW]);
 	return bit;
